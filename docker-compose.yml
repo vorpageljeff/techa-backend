@@ -1,0 +1,61 @@
+# ─────────────────────────────────────────────────────────────────
+# TECHÁ — docker-compose.yml
+# Sobe PostgreSQL+PostGIS e Redis localmente para desenvolvimento
+# Uso: docker-compose up -d
+# ─────────────────────────────────────────────────────────────────
+
+version: "3.9"
+
+services:
+
+  # ── Banco de Dados PostgreSQL + PostGIS ──────────────────────────
+  db:
+    image: postgis/postgis:15-3.4
+    container_name: techa_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: techa_db
+      POSTGRES_USER: techa_user
+      POSTGRES_PASSWORD: techa_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - techa_postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U techa_user -d techa_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis (fila de processamento) ─────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: techa_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - techa_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ── API FastAPI (apenas em produção — dev roda local) ─────────────
+  # api:
+  #   build: .
+  #   container_name: techa_api
+  #   env_file: .env
+  #   ports:
+  #     - "8000:8000"
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+
+volumes:
+  techa_postgres_data:
+  techa_redis_data:

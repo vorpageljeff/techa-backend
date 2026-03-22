@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Environment
+.env
+*.env
+
+# Dados de satélite (arquivos grandes)
+/data/
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Testes
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Docker
+*.override.yml
+
+# Credenciais Firebase (NUNCA subir para o repositório)
+firebase-credentials.json
+*-adminsdk-*.json
+*-firebase-*.json
