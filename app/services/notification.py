@@ -5,6 +5,8 @@
 # ─────────────────────────────────────────────────────────────────
 
 import os
+import json
+import base64
 from loguru import logger
 
 # Inicializado uma única vez no processo
@@ -12,30 +14,41 @@ _firebase_initialized = False
 
 
 def _init_firebase() -> bool:
-    """Inicializa o Firebase Admin SDK se ainda não foi feito. Retorna True se OK."""
+    """Inicializa o Firebase Admin SDK. Suporta arquivo local ou base64 via env var."""
     global _firebase_initialized
     if _firebase_initialized:
         return True
-
-    creds_path = os.getenv("FIREBASE_CREDENTIALS_PATH", "")
-    if not creds_path or not os.path.exists(creds_path):
-        logger.warning(
-            f"FCM desativado — arquivo de credenciais não encontrado: '{creds_path}'. "
-            "Defina FIREBASE_CREDENTIALS_PATH no .env para ativar push notifications."
-        )
-        return False
 
     try:
         import firebase_admin
         from firebase_admin import credentials
 
-        if not firebase_admin._apps:
+        if firebase_admin._apps:
+            _firebase_initialized = True
+            return True
+
+        # Opção 1: base64 via env var (produção / Railway)
+        b64 = os.getenv("FIREBASE_CREDENTIALS_BASE64", "")
+        if b64:
+            cred_dict = json.loads(base64.b64decode(b64).decode())
+            cred = credentials.Certificate(cred_dict)
+            firebase_admin.initialize_app(cred)
+            _firebase_initialized = True
+            logger.info("Firebase inicializado via FIREBASE_CREDENTIALS_BASE64.")
+            return True
+
+        # Opção 2: arquivo local (desenvolvimento)
+        creds_path = os.getenv("FIREBASE_CREDENTIALS_PATH", "")
+        if creds_path and os.path.exists(creds_path):
             cred = credentials.Certificate(creds_path)
             firebase_admin.initialize_app(cred)
+            _firebase_initialized = True
+            logger.info("Firebase inicializado via arquivo local.")
+            return True
 
-        _firebase_initialized = True
-        logger.info("Firebase Admin SDK inicializado com sucesso.")
-        return True
+        logger.warning("FCM desativado — configure FIREBASE_CREDENTIALS_BASE64 ou FIREBASE_CREDENTIALS_PATH.")
+        return False
+
     except Exception as exc:
         logger.error(f"Falha ao inicializar Firebase: {exc}")
         return False
