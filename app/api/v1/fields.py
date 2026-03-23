@@ -25,7 +25,7 @@ from app.models.field import Field
 from app.models.farm import Farm
 from app.models.satellite_analysis import SatelliteAnalysis
 from app.models.anomaly import Anomaly
-from app.schemas.field import FieldCreate, FieldResponse
+from app.schemas.field import FieldCreate, FieldUpdate, FieldResponse
 from app.services.report_service import generate_field_report
 
 router = APIRouter()
@@ -270,6 +270,73 @@ async def get_latest_analysis(
             detail="Nenhuma análise disponível para este talhão ainda",
         )
     return analysis
+
+
+@router.patch(
+    "/fields/{field_id}",
+    response_model=FieldResponse,
+    summary="Atualizar talhão",
+)
+async def update_field(
+    field_id: UUID,
+    data: FieldUpdate,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+) -> Any:
+    """Atualiza nome, cultura ou data de plantio. Apenas campos enviados são alterados."""
+    field = await _get_field_owned_or_404(field_id, user_id, db)
+
+    update_data = data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(field, key, value)
+
+    await db.flush()
+    await db.refresh(field)
+    return _field_to_response(field)
+
+
+@router.get(
+    "/fields/{field_id}/anomalies",
+    response_model=list,
+    summary="Listar anomalias de um talhão",
+)
+async def list_field_anomalies(
+    field_id: UUID,
+    status: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+) -> Any:
+    """
+    Retorna anomalias detectadas no talhão.
+    Parâmetro opcional: `status` (active | inspected | dismissed).
+    """
+    await _get_field_owned_or_404(field_id, user_id, db)
+
+    query = (
+        select(Anomaly)
+        .where(Anomaly.field_id == field_id)
+        .order_by(Anomaly.detected_at.desc())
+    )
+    if status:
+        query = query.where(Anomaly.status == status)
+
+    result = await db.execute(query)
+    anomalies = result.scalars().all()
+
+    return [
+        {
+            "id":               str(a.id),
+            "field_id":         str(a.field_id),
+            "analysis_id":      str(a.analysis_id),
+            "detected_at":      a.detected_at.isoformat(),
+            "ndvi_drop_pct":    a.ndvi_drop_pct,
+            "affected_area_ha": a.affected_area_ha,
+            "suspected_type":   a.suspected_type,
+            "status":           a.status,
+            "push_sent":        a.push_sent,
+        }
+        for a in anomalies
+    ]
 
 
 @router.delete(

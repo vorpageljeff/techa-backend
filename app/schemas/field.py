@@ -32,6 +32,22 @@ class FieldCreate(BaseModel):
         return v
 
 
+class FieldUpdate(BaseModel):
+    """Atualização parcial de talhão — todos os campos são opcionais."""
+    name: Optional[str] = None
+    crop: Optional[str] = None
+    planting_date: Optional[date] = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_empty(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            v = v.strip()
+            if not v:
+                raise ValueError("Nome do talhão não pode ser vazio")
+        return v
+
+
 class FieldResponse(BaseModel):
     id: UUID
     farm_id: UUID

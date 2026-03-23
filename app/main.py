@@ -13,7 +13,7 @@ from app.core.database import check_db_connection
 from app.core.logging import setup_logging
 
 # Importa routers (criados no Sprint 1)
-from app.api.v1 import auth, farms, fields, anomalies
+from app.api.v1 import auth, farms, fields, anomalies, dashboard
 
 
 @asynccontextmanager
@@ -68,10 +68,11 @@ app.add_middleware(
 
 # ── Routers ───────────────────────────────────────────────────────
 PREFIX = "/api/v1"
-app.include_router(auth.router,      prefix=PREFIX, tags=["Auth"])
-app.include_router(farms.router,     prefix=PREFIX, tags=["Fazendas"])
-app.include_router(fields.router,    prefix=PREFIX, tags=["Talhões"])
-app.include_router(anomalies.router, prefix=PREFIX, tags=["Anomalias"])
+app.include_router(auth.router,       prefix=PREFIX, tags=["Auth"])
+app.include_router(farms.router,      prefix=PREFIX, tags=["Fazendas"])
+app.include_router(fields.router,     prefix=PREFIX, tags=["Talh\u00f5es"])
+app.include_router(anomalies.router,  prefix=PREFIX, tags=["Anomalias"])
+app.include_router(dashboard.router,  prefix=PREFIX, tags=["Dashboard"])
 
 
 # ── Health Check ──────────────────────────────────────────────────

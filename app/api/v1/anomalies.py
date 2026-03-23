@@ -6,8 +6,9 @@
 
 from uuid import UUID
 from datetime import datetime, timezone
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -48,20 +49,28 @@ async def _get_anomaly_of_user(
     summary="Listar anomalias do usuário",
 )
 async def list_anomalies(
+    status: Optional[str] = Query(None, description="Filtrar por status: active | inspected | dismissed"),
+    field_id: Optional[UUID] = Query(None, description="Filtrar por talhão"),
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id),
 ) -> list[AnomalyResponse]:
     """
-    Retorna todas as anomalias detectadas em fazendas do usuário.
+    Retorna anomalias detectadas em fazendas do usuário.
+    Filtros opcionais: `status` e `field_id`.
     Ordenadas da mais recente para a mais antiga.
     """
-    result = await db.execute(
+    query = (
         select(Anomaly)
         .join(Field, Anomaly.field_id == Field.id)
         .join(Farm, Field.farm_id == Farm.id)
         .where(Farm.user_id == user_id)
-        .order_by(Anomaly.detected_at.desc())
     )
+    if status:
+        query = query.where(Anomaly.status == status)
+    if field_id:
+        query = query.where(Anomaly.field_id == field_id)
+
+    result = await db.execute(query.order_by(Anomaly.detected_at.desc()))
     return result.scalars().all()
 
 
