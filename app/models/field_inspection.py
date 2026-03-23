@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 from sqlalchemy import String, DateTime, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
-from geoalchemy2 import Geometry
 
 from app.core.database import Base
 
@@ -24,7 +23,8 @@ class FieldInspection(Base):
     photo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     confirmed_issue: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    location: Mapped[str | None] = mapped_column(Geometry("POINT", srid=4326), nullable=True)
+    # Localização GPS — armazenada como WKT (ex: "POINT(lon lat)")
+    location: Mapped[str | None] = mapped_column(Text, nullable=True)
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)  # hora no celular
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 

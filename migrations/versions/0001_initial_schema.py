@@ -4,11 +4,13 @@ Revision ID: 0001
 Revises:
 Create Date: 2026-03-23 00:00:00.000000
 
+Nota: geometria armazenada como WKT (Text) para compatibilidade com
+PostgreSQL padrão. PostGIS pode ser adicionado futuramente para
+queries espaciais avançadas.
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
-import geoalchemy2
 
 # revision identifiers
 revision = "0001"
@@ -18,9 +20,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # ── Extensões PostgreSQL ──────────────────────────────────────
-    op.execute("CREATE EXTENSION IF NOT EXISTS postgis;")
-    op.execute("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";")
+    # ── Extensão uuid-ossp (disponível no Railway Postgres) ───────
+    op.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";')
 
     # ── users ─────────────────────────────────────────────────────
     op.create_table(
@@ -52,6 +53,7 @@ def upgrade() -> None:
     op.create_index("ix_farms_user_id", "farms", ["user_id"])
 
     # ── fields ────────────────────────────────────────────────────
+    # geometry armazenada como WKT (ex: "POLYGON((lon lat, ...))")
     op.create_table(
         "fields",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -59,17 +61,12 @@ def upgrade() -> None:
         sa.Column("name", sa.String(200), nullable=False),
         sa.Column("crop", sa.String(100), nullable=True),
         sa.Column("planting_date", sa.Date(), nullable=True),
-        sa.Column(
-            "geometry",
-            geoalchemy2.types.Geometry("POLYGON", srid=4326, from_text="ST_GeomFromEWKT", name="geometry"),
-            nullable=False,
-        ),
+        sa.Column("geometry", sa.Text(), nullable=False),
         sa.Column("area_ha", sa.Float(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["farm_id"], ["farms.id"], ondelete="CASCADE"),
     )
     op.create_index("ix_fields_farm_id", "fields", ["farm_id"])
-    op.create_index("fields_geometry_idx", "fields", ["geometry"], postgresql_using="gist")
 
     # ── satellite_analyses ────────────────────────────────────────
     op.create_table(
@@ -92,6 +89,7 @@ def upgrade() -> None:
     op.create_index("ix_satellite_analyses_field_id", "satellite_analyses", ["field_id"])
 
     # ── anomalies ─────────────────────────────────────────────────
+    # geometry armazenada como WKT (ex: "MULTIPOLYGON(...)")
     op.create_table(
         "anomalies",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -101,11 +99,7 @@ def upgrade() -> None:
         sa.Column("ndvi_drop_pct", sa.Float(), nullable=False),
         sa.Column("affected_area_ha", sa.Float(), nullable=False),
         sa.Column("suspected_type", sa.String(50), nullable=False, server_default="unknown"),
-        sa.Column(
-            "geometry",
-            geoalchemy2.types.Geometry("MULTIPOLYGON", srid=4326, from_text="ST_GeomFromEWKT", name="geometry"),
-            nullable=True,
-        ),
+        sa.Column("geometry", sa.Text(), nullable=True),
         sa.Column("status", sa.String(30), nullable=False, server_default="active"),
         sa.Column("push_sent", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("alert_sent_at", sa.DateTime(timezone=True), nullable=True),
@@ -113,9 +107,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["field_id"], ["fields.id"]),
     )
     op.create_index("ix_anomalies_field_id", "anomalies", ["field_id"])
-    op.create_index("anomalies_geometry_idx", "anomalies", ["geometry"], postgresql_using="gist")
 
     # ── field_inspections ─────────────────────────────────────────
+    # location armazenada como WKT (ex: "POINT(lon lat)")
     op.create_table(
         "field_inspections",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -124,11 +118,7 @@ def upgrade() -> None:
         sa.Column("photo_url", sa.String(500), nullable=True),
         sa.Column("notes", sa.Text(), nullable=True),
         sa.Column("confirmed_issue", sa.String(100), nullable=True),
-        sa.Column(
-            "location",
-            geoalchemy2.types.Geometry("POINT", srid=4326, from_text="ST_GeomFromEWKT", name="geometry"),
-            nullable=True,
-        ),
+        sa.Column("location", sa.Text(), nullable=True),
         sa.Column("recorded_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("synced_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["anomaly_id"], ["anomalies.id"]),
@@ -144,5 +134,4 @@ def downgrade() -> None:
     op.drop_table("fields")
     op.drop_table("farms")
     op.drop_table("users")
-    op.execute("DROP EXTENSION IF EXISTS \"uuid-ossp\";")
-    op.execute("DROP EXTENSION IF EXISTS postgis;")
+    op.execute('DROP EXTENSION IF EXISTS "uuid-ossp";')

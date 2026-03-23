@@ -4,10 +4,9 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, DateTime, Float, Boolean, ForeignKey, Index
+from sqlalchemy import String, DateTime, Float, Boolean, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
-from geoalchemy2 import Geometry
 
 from app.core.database import Base
 
@@ -28,8 +27,8 @@ class Anomaly(Base):
     affected_area_ha: Mapped[float] = mapped_column(Float, nullable=False)
     # hidrico | praga | nutricional | unknown (IA de classificação em sprint futuro)
     suspected_type: Mapped[str] = mapped_column(String(50), default="unknown")
-    # Zona afetada no mapa (MultiPolygon WGS84)
-    geometry: Mapped[str | None] = mapped_column(Geometry("MULTIPOLYGON", srid=4326), nullable=True)
+    # Zona afetada no mapa — armazenada como WKT (ex: "MULTIPOLYGON(...)")
+    geometry: Mapped[str | None] = mapped_column(Text, nullable=True)
     # active | inspected | resolved
     status: Mapped[str] = mapped_column(String(30), default="active")
     push_sent: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -40,9 +39,7 @@ class Anomaly(Base):
     analysis: Mapped["SatelliteAnalysis"] = relationship("SatelliteAnalysis", back_populates="anomalies")
     inspections: Mapped[list["FieldInspection"]] = relationship("FieldInspection", back_populates="anomaly")
 
-    __table_args__ = (
-        Index("anomalies_geometry_idx", "geometry", postgresql_using="gist"),
-    )
+    __table_args__ = ()
 
     def __repr__(self) -> str:
         return f"<Anomaly drop={self.ndvi_drop_pct:.1f}% area={self.affected_area_ha:.1f}ha status={self.status}>"
