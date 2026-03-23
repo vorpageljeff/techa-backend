@@ -1,0 +1,10 @@
+Migrations do banco de dados Techá — gerenciadas pelo Alembic.
+
+Para criar uma nova migration:
+    alembic revision --autogenerate -m "descrição"
+
+Para aplicar todas as migrations pendentes:
+    alembic upgrade head
+
+Para reverter a última migration:
+    alembic downgrade -1
