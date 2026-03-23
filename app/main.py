@@ -82,7 +82,7 @@ async def health_check():
     return {
         "status": "ok" if db_ok else "degraded",
         "version": "1.0.0",
-        "service": "Tech\u00e1",       # Unicode escape: evita ambiguidade de encoding no deploy
+        "service": "Tech" + chr(0xe1),  # chr(0xe1)=á, encoding-safe em qualquer locale
         "environment": settings.APP_ENV,
         "database": "connected" if db_ok else "error",
     }
