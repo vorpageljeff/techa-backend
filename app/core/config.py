@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     # ── Banco de Dados ────────────────────────────────────────────
     DATABASE_URL: str          # async (asyncpg) — usado pela API
-    DATABASE_URL_SYNC: str     # sync (psycopg2) — usado pelo Alembic
+    DATABASE_URL_SYNC: str = ""  # sync (psycopg2) — usado pelo Alembic (derivado se vazio)
 
     # ── Redis ─────────────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -76,9 +76,29 @@ class Settings(BaseSettings):
     @field_validator("DATABASE_URL")
     @classmethod
     def validate_db_url(cls, v: str) -> str:
-        if not v.startswith("postgresql"):
+        # Railway / Heroku fornecem "postgres://" ou "postgresql://"
+        # SQLAlchemy+asyncpg exige "postgresql+asyncpg://"
+        if v.startswith("postgres://"):
+            v = "postgresql+asyncpg://" + v[len("postgres://"):]
+        elif v.startswith("postgresql://"):
+            v = "postgresql+asyncpg://" + v[len("postgresql://"):]
+        if not v.startswith("postgresql+asyncpg://"):
             raise ValueError("DATABASE_URL deve começar com 'postgresql'")
         return v
+
+    @field_validator("DATABASE_URL_SYNC")
+    @classmethod
+    def validate_db_url_sync(cls, v: str) -> str:
+        # Normaliza "postgres://" para "postgresql://"
+        if v.startswith("postgres://"):
+            v = "postgresql://" + v[len("postgres://"):]
+        return v
+
+    def model_post_init(self, __context) -> None:
+        # Se DATABASE_URL_SYNC não foi definido, deriva do DATABASE_URL
+        if not self.DATABASE_URL_SYNC:
+            sync_url = self.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+            object.__setattr__(self, "DATABASE_URL_SYNC", sync_url)
 
     @property
     def is_production(self) -> bool:
