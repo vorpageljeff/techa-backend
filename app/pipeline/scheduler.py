@@ -214,12 +214,12 @@ async def _process_field(
 
 
 def _get_field_bbox(field) -> Optional[list[float]]:
-    """Extrai bbox [min_lon, min_lat, max_lon, max_lat] da geometria do talhão."""
-    if field.geometry is None:
+    """Extrai bbox [min_lon, min_lat, max_lon, max_lat] da geometria do talhão (WKT)."""
+    if not field.geometry:
         return None
     try:
-        from geoalchemy2.shape import to_shape
-        geom = to_shape(field.geometry)
+        from shapely import wkt as shapely_wkt
+        geom = shapely_wkt.loads(field.geometry)
         bounds = geom.bounds   # (minx, miny, maxx, maxy)
         return list(bounds)
     except Exception as exc:
@@ -229,11 +229,11 @@ def _get_field_bbox(field) -> Optional[list[float]]:
 
 def _get_field_shapely(field):
     """Retorna geometria Shapely do talhão para recorte do raster."""
-    if field.geometry is None:
+    if not field.geometry:
         return None
     try:
-        from geoalchemy2.shape import to_shape
-        return to_shape(field.geometry)
+        from shapely import wkt as shapely_wkt
+        return shapely_wkt.loads(field.geometry)
     except Exception:
         return None
 

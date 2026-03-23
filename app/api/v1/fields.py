@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from shapely.geometry import shape, mapping
-from geoalchemy2.shape import to_shape
+from shapely import wkt as shapely_wkt
 from pyproj import Geod
 
 from app.core.database import get_db
@@ -56,12 +56,12 @@ def _calc_area_ha(shapely_geom) -> float:
     return abs(area_m2) / 10_000
 
 
-def _geom_to_geojson(wkb_element) -> dict | None:
-    """Converte WKBElement do PostGIS para dict GeoJSON."""
-    if wkb_element is None:
+def _geom_to_geojson(wkt_text) -> dict | None:
+    """Converte WKT string para dict GeoJSON usando shapely."""
+    if not wkt_text:
         return None
     try:
-        return dict(mapping(to_shape(wkb_element)))
+        return dict(mapping(shapely_wkt.loads(wkt_text)))
     except Exception:
         return None
 
@@ -131,20 +131,20 @@ async def create_field(
     """
     await _get_farm_or_404(farm_id, user_id, db)
 
-    # Converte GeoJSON → Shapely para cálculo de área e EWKT
+    # Converte GeoJSON → Shapely para cálculo de área e WKT
     try:
         shapely_geom = shape(data.geometry)
         if not shapely_geom.is_valid:
             shapely_geom = shapely_geom.buffer(0)   # auto-reparo
         area_ha = _calc_area_ha(shapely_geom)
-        ewkt = f"SRID=4326;{shapely_geom.wkt}"
+        wkt_text = shapely_geom.wkt   # armazenado como texto simples
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Geometria inválida: {exc}",
         )
 
-    # INSERT via raw SQL com ST_GeomFromEWKT — único método garantido com PostGIS
+    # INSERT via raw SQL — geometry como texto WKT simples (sem PostGIS)
     field_id = _uuid.uuid4()
     now = datetime.now(timezone.utc)
 
@@ -154,7 +154,7 @@ async def create_field(
                 (id, farm_id, name, crop, planting_date, geometry, area_ha, created_at)
             VALUES
                 (:id, :farm_id, :name, :crop, :planting_date,
-                 ST_GeomFromEWKT(:geom), :area_ha, :created_at)
+                 :geom, :area_ha, :created_at)
         """),
         {
             "id": str(field_id),
@@ -162,7 +162,7 @@ async def create_field(
             "name": data.name,
             "crop": data.crop,
             "planting_date": data.planting_date,
-            "geom": ewkt,
+            "geom": wkt_text,
             "area_ha": round(area_ha, 4),
             "created_at": now,
         },
