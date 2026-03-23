@@ -25,14 +25,21 @@ target_metadata = Base.metadata
 
 
 def get_url() -> str:
-    """Obtém a URL do banco de dados (sync) do ambiente ou alembic.ini."""
-    url = os.getenv("DATABASE_URL_SYNC", "")
+    """
+    Obtém a URL de conexão síncrona para o Alembic.
+    Lê DATABASE_URL do ambiente (injetado pelo Railway) e converte
+    para o driver psycopg2 (sync), removendo o prefixo asyncpg se presente.
+    """
+    url = os.getenv("DATABASE_URL", "")
     if not url:
-        url = config.get_main_option("sqlalchemy.url", "")
-    # Normaliza postgres:// -> postgresql://
+        raise RuntimeError(
+            "DATABASE_URL não está definida no ambiente. "
+            "Certifique-se de que a variável está configurada no Railway."
+        )
+    # Railway pode fornecer postgres:// ou postgresql:// — normaliza
     if url.startswith("postgres://"):
         url = "postgresql://" + url[len("postgres://"):]
-    # Remove prefixo asyncpg se presente
+    # Remove prefixo asyncpg se presente (Pydantic pode ter adicionado)
     if url.startswith("postgresql+asyncpg://"):
         url = "postgresql://" + url[len("postgresql+asyncpg://"):]
     return url
