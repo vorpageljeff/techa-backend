@@ -1,8 +1,8 @@
 # ─────────────────────────────────────────────────────────────────
 # app/api/v1/fields.py
 # CRUD de Talhões com polígono GeoJSON — requer autenticação JWT
-# Geometria inserida via ST_GeomFromEWKT (raw SQL) para garantir
-# compatibilidade com PostGIS sem depender do WKB do geoalchemy2.
+# Geometria armazenada como WKT (Text) no banco.
+# Conversão GeoJSON ↔ WKT feita via shapely (sem PostGIS).
 # ─────────────────────────────────────────────────────────────────
 
 import uuid as _uuid
@@ -127,7 +127,7 @@ async def create_field(
     """
     Cria um talhão com polígono GeoJSON.
     A área é calculada automaticamente via pyproj (WGS84).
-    A geometria é inserida via ST_GeomFromEWKT para compatibilidade PostGIS.
+    A geometria é armazenada como WKT (Text) e a área calculada via pyproj (WGS84).
     """
     await _get_farm_or_404(farm_id, user_id, db)
 
