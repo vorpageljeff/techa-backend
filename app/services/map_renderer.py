@@ -74,7 +74,9 @@ def _latlon_to_pixel(lat: float, lon: float,
 
 # ── Fetch OSM basemap ─────────────────────────────────────────────────────────
 
-def _fetch_basemap(center_lat: float, center_lon: float, zoom: int) -> Optional[Image.Image]:
+def _fetch_basemap(
+    center_lat: float, center_lon: float, zoom: int
+) -> Optional[tuple["Image.Image", int, int]]:
     if not _REQUESTS_OK or not _PIL_OK:
         return None
 

@@ -82,7 +82,7 @@ async def health_check():
     return {
         "status": "ok" if db_ok else "degraded",
         "version": "1.0.0",
-        "service": settings.APP_NAME,
+        "service": "Techá",          # hardcoded para evitar double-encoding do env var
         "environment": settings.APP_ENV,
         "database": "connected" if db_ok else "error",
     }
