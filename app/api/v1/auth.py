@@ -13,10 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from uuid import UUID
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-
-_limiter = Limiter(key_func=get_remote_address)
+from app.core.limiter import limiter as _limiter
 
 import redis as _redis_sync
 
