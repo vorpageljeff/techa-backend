@@ -40,6 +40,7 @@ class FieldSummary(BaseModel):
 class DashboardResponse(BaseModel):
     farms_count: int
     fields_count: int
+    total_area_ha: float            # soma de area_ha de todos os talhões
     active_anomalies: int
     fields: list[FieldSummary]
     recent_anomalies: list[dict]   # últimas 5 anomalias ativas
@@ -87,6 +88,7 @@ async def get_dashboard(
         return DashboardResponse(
             farms_count=0,
             fields_count=0,
+            total_area_ha=0.0,
             active_anomalies=0,
             fields=[],
             recent_anomalies=[],
@@ -185,9 +187,12 @@ async def get_dashboard(
                 }
             )
 
+    total_area_ha = round(sum(f.area_ha or 0.0 for f in fields), 2)
+
     return DashboardResponse(
         farms_count=farms_count,
         fields_count=len(fields),
+        total_area_ha=total_area_ha,
         active_anomalies=total_active,
         fields=field_summaries,
         recent_anomalies=recent_anomalies,

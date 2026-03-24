@@ -400,13 +400,80 @@ async def get_growth_stage(
         "days_since_planting":   days,
         "stage_key":             current_stage[1],
         "stage_label":           current_stage[2],
-        "stage_description":     f"Est\u00e1gio {current_stage[1]}: {current_stage[2]}",
+        "stage_description":     f"Estagio {current_stage[1]}: {current_stage[2]}",
         "progress_pct":          progress_pct,
         "next_stage_key":        next_stage[1] if next_stage else None,
         "next_stage_label":      next_stage[2] if next_stage else None,
         "days_to_next_stage":    days_to_next,
         "cycle_complete":        days >= total_days,
     }
+
+
+@router.get(
+    "/fields/{field_id}/ndvi-history",
+    summary="Série histórica de NDVI para gráfico",
+)
+async def get_ndvi_history(
+    field_id: UUID,
+    limit: int = Query(90, ge=1, le=365, description="Máximo de pontos (dias)"),
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+) -> dict:
+    """
+    Retorna a série temporal de NDVI do talhão, otimizada para renderização
+    de gráfico no app mobile. Cada ponto contém:
+    - date: data da imagem (ISO 8601)
+    - ndvi_mean / ndvi_min / ndvi_max: valores NDVI
+    - cloud_cover_pct: cobertura de nuvem (%)
+    - status: indicador de saúde (critico / alerta / normal / excelente)
+    """
+    await _get_field_owned_or_404(field_id, user_id, db)
+
+    result = await db.execute(
+        select(SatelliteAnalysis)
+        .where(
+            SatelliteAnalysis.field_id == field_id,
+            SatelliteAnalysis.status == "valid",
+        )
+        .order_by(SatelliteAnalysis.image_date.asc())
+        .limit(limit)
+    )
+    analyses = result.scalars().all()
+
+    points = [
+        {
+            "date":            a.image_date.isoformat(),
+            "ndvi_mean":       round(a.ndvi_mean, 4) if a.ndvi_mean is not None else None,
+            "ndvi_min":        round(a.ndvi_min, 4)  if a.ndvi_min  is not None else None,
+            "ndvi_max":        round(a.ndvi_max, 4)  if a.ndvi_max  is not None else None,
+            "cloud_cover_pct": round(a.cloud_cover_pct, 1) if a.cloud_cover_pct is not None else None,
+            "status":          _ndvi_status_label(a.ndvi_mean),
+        }
+        for a in analyses
+    ]
+
+    # Calcula tendência simples (último vs penúltimo)
+    trend = None
+    if len(points) >= 2:
+        last, prev = points[-1]["ndvi_mean"], points[-2]["ndvi_mean"]
+        if last is not None and prev is not None and prev != 0:
+            change_pct = round(((last - prev) / prev) * 100, 1)
+            trend = "up" if change_pct > 2 else "down" if change_pct < -2 else "stable"
+
+    return {
+        "field_id":   str(field_id),
+        "data_points": len(points),
+        "trend":       trend,
+        "series":      points,
+    }
+
+
+def _ndvi_status_label(ndvi: float | None) -> str:
+    if ndvi is None:  return "sem_dados"
+    if ndvi < 0.2:    return "critico"
+    if ndvi < 0.4:    return "alerta"
+    if ndvi < 0.6:    return "normal"
+    return "excelente"
 
 
 @router.patch(
