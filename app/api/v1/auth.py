@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from uuid import UUID
+from loguru import logger
 from app.core.limiter import limiter as _limiter
 
 import redis as _redis_sync
@@ -259,14 +260,26 @@ async def forgot_password(
         try:
             r = _get_redis()
             r.setex(key, _RESET_TTL_SEC, code)
-        except Exception:
+        except Exception as redis_err:
+            logger.error(f"Redis falhou ao salvar OTP: {redis_err}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Serviço temporariamente indisponível. Tente novamente.",
             )
 
-        # Envia e-mail em background para não bloquear a resposta
-        background_tasks.add_task(send_reset_code, user.email, user.name, code)
+        # Envia e-mail de forma assíncrona com log de erro
+        import asyncio as _asyncio
+        loop = _asyncio.get_event_loop()
+        try:
+            sent = await loop.run_in_executor(
+                None, send_reset_code, user.email, user.name, code
+            )
+            if sent:
+                logger.info(f"Email OTP enviado para {user.email}")
+            else:
+                logger.error(f"Email OTP NAO enviado para {user.email} — verifique GMAIL_USER/GMAIL_APP_PASSWORD")
+        except Exception as email_err:
+            logger.error(f"Excecao ao enviar email OTP para {user.email}: {email_err}")
 
     return {
         "message": (
