@@ -52,9 +52,15 @@ class Settings(BaseSettings):
     TILES_STORAGE_PATH: str = "/data/tiles"
     RASTER_STORAGE_PATH: str = "/data/rasters"
 
-    # ── Email (Gmail SMTP) ────────────────────────────────────────
-    GMAIL_USER: str = ""          # ex: suporte@innovagropy.com
-    GMAIL_APP_PASSWORD: str = ""  # Senha de App do Google (não a senha normal)
+    # ── Email ─────────────────────────────────────────────────────
+    # Resend (HTTP API — recomendado em produção/Railway)
+    RESEND_API_KEY: str = ""          # ex: re_xxxxxxxxxxxx
+    EMAIL_FROM_ADDRESS: str = "noreply@techa.com.py"  # deve ser domínio verificado no Resend
+
+    # Gmail SMTP (fallback para desenvolvimento local)
+    GMAIL_USER: str = ""              # ex: caiolamberts@gmail.com
+    GMAIL_APP_PASSWORD: str = ""      # Senha de App do Google
+
     EMAIL_FROM_NAME: str = "Techá - InnovAgro"
     RESET_CODE_TTL_MINUTES: int = 15  # validade do código OTP
 

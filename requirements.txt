@@ -59,3 +59,4 @@ pytest-cov==5.0.0
 factory-boy==3.3.0
 fpdf2==2.7.9
 twilio>=8.0.0
+resend>=2.0.0
