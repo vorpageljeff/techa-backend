@@ -5,7 +5,8 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -49,14 +50,18 @@ async def create_farm(
     summary="Listar fazendas do usuário",
 )
 async def list_farms(
+    limit: int = Query(50, ge=1, le=200, description="Máximo de itens por página"),
+    offset: int = Query(0, ge=0, description="Número de itens a pular"),
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id),
 ) -> list[FarmResponse]:
-    """Retorna todas as fazendas do usuário autenticado."""
+    """Retorna fazendas do usuário autenticado. Suporta paginação via `limit` e `offset`."""
     result = await db.execute(
         select(Farm)
         .where(Farm.user_id == user_id)
         .order_by(Farm.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
     return result.scalars().all()
 

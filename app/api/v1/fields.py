@@ -10,7 +10,7 @@ from uuid import UUID
 from typing import Any, Optional
 from datetime import datetime, date, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -181,16 +181,20 @@ async def create_field(
 )
 async def list_fields(
     farm_id: UUID,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id),
 ) -> Any:
-    """Lista todos os talhões de uma fazenda do usuário."""
+    """Lista talhões de uma fazenda do usuário. Suporta paginação via `limit` e `offset`."""
     await _get_farm_or_404(farm_id, user_id, db)
 
     result = await db.execute(
         select(Field)
         .where(Field.farm_id == farm_id)
         .order_by(Field.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
     fields = result.scalars().all()
     return [_field_to_response(f) for f in fields]
@@ -218,12 +222,14 @@ async def get_field(
 )
 async def list_analyses(
     field_id: UUID,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id),
 ) -> Any:
     """
-    Retorna todas as análises Sentinel-2 processadas para o talhão,
-    ordenadas da mais recente para a mais antiga.
+    Retorna análises Sentinel-2 do talhão, ordenadas da mais recente.
+    Suporta paginação via `limit` e `offset`.
     """
     await _get_field_owned_or_404(field_id, user_id, db)
 
@@ -234,6 +240,8 @@ async def list_analyses(
             SatelliteAnalysis.status == "valid",
         )
         .order_by(SatelliteAnalysis.image_date.desc())
+        .limit(limit)
+        .offset(offset)
     )
     return result.scalars().all()
 

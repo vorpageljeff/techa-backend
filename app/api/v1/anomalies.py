@@ -17,7 +17,7 @@ from app.core.security import get_current_user_id
 from app.models.anomaly import Anomaly
 from app.models.field import Field
 from app.models.farm import Farm
-from app.schemas.anomaly import AnomalyResponse, AnomalyConfirmRequest, AnomalyDismissRequest
+from app.schemas.anomaly import AnomalyResponse, AnomalyConfirmRequest, AnomalyDismissRequest, InspectionResponse
 
 router = APIRouter()
 
@@ -51,13 +51,14 @@ async def _get_anomaly_of_user(
 async def list_anomalies(
     status: Optional[str] = Query(None, description="Filtrar por status: active | inspected | dismissed"),
     field_id: Optional[UUID] = Query(None, description="Filtrar por talhão"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id),
 ) -> list[AnomalyResponse]:
     """
-    Retorna anomalias detectadas em fazendas do usuário.
-    Filtros opcionais: `status` e `field_id`.
-    Ordenadas da mais recente para a mais antiga.
+    Retorna anomalias do usuário. Filtros: `status`, `field_id`.
+    Paginação: `limit`, `offset`.
     """
     query = (
         select(Anomaly)
@@ -70,7 +71,9 @@ async def list_anomalies(
     if field_id:
         query = query.where(Anomaly.field_id == field_id)
 
-    result = await db.execute(query.order_by(Anomaly.detected_at.desc()))
+    result = await db.execute(
+        query.order_by(Anomaly.detected_at.desc()).limit(limit).offset(offset)
+    )
     return result.scalars().all()
 
 
@@ -113,14 +116,19 @@ async def confirm_anomaly(
 
     anomaly.status = "inspected"
 
-    # Registra inspeção de campo se notas foram fornecidas
-    if data.notes or data.confirmed_issue:
-        from app.models.field_inspection import FieldInspection
+    # Registra inspeção de campo com notas e/ou localização GPS
+    from app.models.field_inspection import FieldInspection
+    location_wkt = None
+    if data.location_lat is not None and data.location_lon is not None:
+        location_wkt = f"POINT({data.location_lon} {data.location_lat})"
+
+    if data.notes or data.confirmed_issue or location_wkt:
         inspection = FieldInspection(
             anomaly_id=anomaly.id,
             user_id=user_id,
             notes=data.notes,
             confirmed_issue=data.confirmed_issue,
+            location=location_wkt,
             recorded_at=datetime.now(timezone.utc),
         )
         db.add(inspection)
@@ -170,3 +178,44 @@ async def dismiss_anomaly(
     await db.flush()
     await db.refresh(anomaly)
     return anomaly
+
+
+@router.get(
+    "/anomalies/{anomaly_id}/inspections",
+    response_model=list[InspectionResponse],
+    summary="Histórico de inspeções de uma anomalia",
+)
+async def list_inspections(
+    anomaly_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+) -> list[InspectionResponse]:
+    """
+    Retorna todas as inspeções de campo registradas para uma anomalia,
+    ordenadas da mais recente para a mais antiga.
+    """
+    from app.models.field_inspection import FieldInspection
+
+    # Verifica propriedade da anomalia
+    await _get_anomaly_of_user(anomaly_id, user_id, db)
+
+    result = await db.execute(
+        select(FieldInspection)
+        .where(FieldInspection.anomaly_id == anomaly_id)
+        .order_by(FieldInspection.recorded_at.desc())
+    )
+    inspections = result.scalars().all()
+
+    return [
+        InspectionResponse(
+            id=i.id,
+            anomaly_id=i.anomaly_id,
+            user_id=i.user_id,
+            notes=i.notes,
+            confirmed_issue=i.confirmed_issue,
+            location_wkt=i.location,
+            recorded_at=i.recorded_at,
+            synced_at=i.synced_at,
+        )
+        for i in inspections
+    ]
