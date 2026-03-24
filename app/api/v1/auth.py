@@ -121,6 +121,40 @@ async def me(
     return user
 
 
+class _UpdateMeRequest(BaseModel):
+    name: str | None = None
+
+
+@router.patch(
+    "/auth/me",
+    response_model=UserResponse,
+    summary="Atualizar perfil do usuário",
+)
+async def update_me(
+    data: _UpdateMeRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+) -> UserResponse:
+    """Atualiza o nome do usuário autenticado."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    if data.name is not None:
+        name = data.name.strip()
+        if len(name) < 2:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Nome deve ter ao menos 2 caracteres",
+            )
+        user.name = name
+
+    await db.flush()
+    await db.refresh(user)
+    return user
+
+
 # ── Recuperação de Senha ─────────────────────────────────────────────────────
 
 class _ForgotRequest(BaseModel):

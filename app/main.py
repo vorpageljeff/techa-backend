@@ -13,7 +13,7 @@ from app.core.database import check_db_connection
 from app.core.logging import setup_logging
 
 # Importa routers (criados no Sprint 1)
-from app.api.v1 import auth, farms, fields, anomalies, dashboard
+from app.api.v1 import auth, farms, fields, anomalies, dashboard, admin
 
 
 @asynccontextmanager
@@ -73,6 +73,7 @@ app.include_router(farms.router,      prefix=PREFIX, tags=["Fazendas"])
 app.include_router(fields.router,     prefix=PREFIX, tags=["Talh\u00f5es"])
 app.include_router(anomalies.router,  prefix=PREFIX, tags=["Anomalias"])
 app.include_router(dashboard.router,  prefix=PREFIX, tags=["Dashboard"])
+app.include_router(admin.router,      prefix=PREFIX, tags=["Admin"])
 
 
 # ── Health Check ──────────────────────────────────────────────────
