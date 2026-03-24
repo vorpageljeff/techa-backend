@@ -122,13 +122,14 @@ async def confirm_anomaly(
     if data.location_lat is not None and data.location_lon is not None:
         location_wkt = f"POINT({data.location_lon} {data.location_lat})"
 
-    if data.notes or data.confirmed_issue or location_wkt:
+    if data.notes or data.confirmed_issue or location_wkt or data.photo_url:
         inspection = FieldInspection(
             anomaly_id=anomaly.id,
             user_id=user_id,
             notes=data.notes,
             confirmed_issue=data.confirmed_issue,
             location=location_wkt,
+            photo_url=data.photo_url,
             recorded_at=datetime.now(timezone.utc),
         )
         db.add(inspection)
@@ -214,6 +215,7 @@ async def list_inspections(
             notes=i.notes,
             confirmed_issue=i.confirmed_issue,
             location_wkt=i.location,
+            photo_url=i.photo_url,
             recorded_at=i.recorded_at,
             synced_at=i.synced_at,
         )

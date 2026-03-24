@@ -280,6 +280,135 @@ async def get_latest_analysis(
     return analysis
 
 
+@router.get(
+    "/fields/{field_id}/growth-stage",
+    summary="Estágio fenológico atual do talhão",
+)
+async def get_growth_stage(
+    field_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+) -> dict:
+    """
+    Retorna o estágio fenológico atual da cultura com base na data de plantio.
+    Culturas suportadas: soja, milho, trigo, algodao.
+    Retorna 400 se o talhão não tiver data de plantio cadastrada.
+    """
+    from datetime import date as date_type
+
+    field = await _get_field_owned_or_404(field_id, user_id, db)
+
+    if not field.planting_date:
+        raise HTTPException(
+            status_code=400,
+            detail="Este talhão não tem data de plantio cadastrada. "
+                   "Atualize via PATCH /fields/{id}.",
+        )
+
+    crop = (field.crop or "soja").lower().replace("ã", "a").replace("ç", "c")
+    today = date_type.today()
+    days = (today - field.planting_date).days
+
+    if days < 0:
+        return {
+            "field_id": str(field_id),
+            "crop": field.crop,
+            "planting_date": field.planting_date.isoformat(),
+            "days_since_planting": days,
+            "stage_key": "pre_plantio",
+            "stage_label": "Pré-plantio",
+            "stage_description": "Data de plantio futura.",
+            "progress_pct": 0,
+        }
+
+    # ── Tabelas fenológicas simplificadas ──────────────────────────
+    # (dias após plantio → lista de estágios)
+    STAGES: dict[str, list[tuple[int, str, str]]] = {
+        "soja": [
+            (0,   "VE",  "Emergência"),
+            (7,   "V1",  "Primeiro trifólio"),
+            (20,  "V3",  "Terceiro trifólio"),
+            (35,  "V5",  "Quinto trifólio"),
+            (45,  "R1",  "Início do florescimento"),
+            (55,  "R3",  "Início da frutificação"),
+            (70,  "R5",  "Início do enchimento de grão"),
+            (90,  "R6",  "Grão cheio"),
+            (110, "R7",  "Início da maturação"),
+            (125, "R8",  "Maturação plena"),
+        ],
+        "milho": [
+            (0,   "VE",  "Emergência"),
+            (10,  "V3",  "Terceira folha"),
+            (25,  "V6",  "Sexta folha"),
+            (40,  "V10", "Décima folha"),
+            (55,  "VT",  "Pendoamento"),
+            (62,  "R1",  "Espigamento / Silagem"),
+            (75,  "R2",  "Grão bolhoso"),
+            (90,  "R4",  "Grão pastoso"),
+            (105, "R5",  "Grão farináceo"),
+            (120, "R6",  "Maturação fisiológica"),
+        ],
+        "trigo": [
+            (0,   "Z10", "Germinação"),
+            (15,  "Z13", "Três folhas"),
+            (30,  "Z21", "Início do afilhamento"),
+            (50,  "Z30", "Início do alongamento"),
+            (65,  "Z51", "Início da espigação"),
+            (75,  "Z60", "Florescimento"),
+            (90,  "Z71", "Grão aquoso"),
+            (105, "Z83", "Grão farináceo"),
+            (120, "Z87", "Grão duro"),
+            (130, "Z92", "Maturação plena"),
+        ],
+        "algodao": [
+            (0,   "VE",  "Emergência"),
+            (15,  "V1",  "Cotilédones abertos"),
+            (30,  "V3",  "Terceiro nó"),
+            (50,  "B1",  "Primeiro botão floral"),
+            (70,  "FL",  "Pleno florescimento"),
+            (90,  "C1",  "Primeiro capulho"),
+            (110, "C3",  "Capulhos desenvolvidos"),
+            (130, "M",   "Início da abertura"),
+            (150, "MA",  "Maturação plena"),
+        ],
+    }
+
+    # Fallback para soja se cultura não mapeada
+    stages = STAGES.get(crop, STAGES["soja"])
+    total_days = stages[-1][0]
+
+    # Determina estágio atual
+    current_stage = stages[0]
+    for stage in stages:
+        if days >= stage[0]:
+            current_stage = stage
+        else:
+            break
+
+    # Progresso dentro do ciclo
+    progress_pct = min(round((days / total_days) * 100, 1), 100.0)
+
+    # Próximo estágio
+    current_idx = stages.index(current_stage)
+    next_stage = stages[current_idx + 1] if current_idx + 1 < len(stages) else None
+    days_to_next = (next_stage[0] - days) if next_stage else None
+
+    return {
+        "field_id":              str(field_id),
+        "crop":                  field.crop,
+        "planting_date":         field.planting_date.isoformat(),
+        "days_since_planting":   days,
+        "stage_key":             current_stage[1],
+        "stage_label":           current_stage[2],
+        "stage_description":     f"Estágio {current_stage[1]} — {current_stage[2]}",
+        "progress_pct":          progress_pct,
+        "next_stage_key":        next_stage[1] if next_stage else None,
+        "next_stage_label":      next_stage[2] if next_stage else None,
+        "days_to_next_stage":    days_to_next,
+        "cycle_complete":        days >= total_days,
+    }
+
+
 @router.patch(
     "/fields/{field_id}",
     response_model=FieldResponse,

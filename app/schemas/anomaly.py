@@ -28,6 +28,8 @@ class AnomalyConfirmRequest(BaseModel):
     # Coordenadas GPS da localização inspecionada (opcional)
     location_lat: Optional[float] = None
     location_lon: Optional[float] = None
+    # URL da foto tirada no campo (app faz upload para Firebase Storage e envia a URL)
+    photo_url: Optional[str] = None
 
     @field_validator("location_lat")
     @classmethod
@@ -55,6 +57,7 @@ class InspectionResponse(BaseModel):
     notes: Optional[str]
     confirmed_issue: Optional[str]
     location_wkt: Optional[str] = None      # WKT do ponto GPS
+    photo_url: Optional[str] = None
     recorded_at: datetime
     synced_at: datetime
 
