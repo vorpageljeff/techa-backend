@@ -7,12 +7,16 @@ import random
 import string
 import asyncio
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Request, status, BackgroundTasks
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from uuid import UUID
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+_limiter = Limiter(key_func=get_remote_address)
 
 import redis as _redis_sync
 
@@ -76,7 +80,9 @@ async def register(
     response_model=TokenResponse,
     summary="Login — obtém JWT",
 )
+@_limiter.limit("10/minute")
 async def login(
+    request: Request,
     data: UserLogin,
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
@@ -153,6 +159,63 @@ async def update_me(
     await db.flush()
     await db.refresh(user)
     return user
+
+
+class _ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.patch(
+    "/auth/change-password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Alterar senha (usuário autenticado)",
+)
+async def change_password(
+    data: _ChangePasswordRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+) -> None:
+    """Altera a senha do usuário logado após verificar a senha atual."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usu\u00e1rio n\u00e3o encontrado")
+
+    if not verify_password(data.current_password, user.password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Senha atual incorreta",
+        )
+
+    if len(data.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Nova senha deve ter pelo menos 8 caracteres",
+        )
+
+    user.password = hash_password(data.new_password)
+    await db.flush()
+
+
+@router.delete(
+    "/auth/account",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Excluir conta (LGPD)",
+)
+async def delete_account(
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+) -> None:
+    """
+    Exclui permanentemente a conta do usuário e todos os seus dados.
+    Cascade: fazendas → talhões → análises → anomalias → inspeções.
+    """
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user:
+        await db.delete(user)
+        await db.flush()
 
 
 # ── Recuperação de Senha ─────────────────────────────────────────────────────

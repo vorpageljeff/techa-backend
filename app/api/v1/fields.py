@@ -10,8 +10,10 @@ from uuid import UUID
 from typing import Any, Optional
 from datetime import datetime, date, timezone
 
+import csv
+import io
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
@@ -268,6 +270,54 @@ async def list_analyses(
         .offset(offset)
     )
     return result.scalars().all()
+
+
+@router.get(
+    "/fields/{field_id}/analyses/export",
+    summary="Exportar histórico NDVI em CSV",
+)
+async def export_analyses_csv(
+    field_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+) -> StreamingResponse:
+    """
+    Exporta todas as análises Sentinel-2 do talhão em formato CSV.
+    Colunas: data, ndvi_mean, ndvi_min, ndvi_max, cloud_cover_pct, status
+    """
+    field = await _get_field_owned_or_404(field_id, user_id, db)
+
+    result = await db.execute(
+        select(SatelliteAnalysis)
+        .where(SatelliteAnalysis.field_id == field_id)
+        .order_by(SatelliteAnalysis.image_date.asc())
+    )
+    analyses = result.scalars().all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "data", "ndvi_medio", "ndvi_min", "ndvi_max",
+        "cobertura_nuvem_pct", "status", "fonte"
+    ])
+    for a in analyses:
+        writer.writerow([
+            a.image_date,
+            round(a.ndvi_mean, 4) if a.ndvi_mean is not None else "",
+            round(a.ndvi_min, 4)  if a.ndvi_min  is not None else "",
+            round(a.ndvi_max, 4)  if a.ndvi_max  is not None else "",
+            round(a.cloud_cover_pct, 1) if a.cloud_cover_pct is not None else "",
+            a.status,
+            a.source,
+        ])
+
+    output.seek(0)
+    filename = f"ndvi_{field.name.replace(' ', '_')}_{field_id}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get(

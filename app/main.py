@@ -6,14 +6,21 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from loguru import logger
 
 from app.core.config import settings
 from app.core.database import check_db_connection
 from app.core.logging import setup_logging
 
-# Importa routers (criados no Sprint 1)
+# Importa routers
 from app.api.v1 import auth, farms, fields, anomalies, dashboard, admin
+
+# ── Rate Limiter (por IP) — 120 req/min geral, 10 req/min para login ──
+limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
 
 
 @asynccontextmanager
@@ -57,7 +64,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ── CORS (liberado no MVP — restringir em produção) ───────────────
+# ── Rate limiting ─────────────────────────────────────────────────
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+# ── CORS ──────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"] if not settings.is_production else ["https://app.techa.com.py"],
