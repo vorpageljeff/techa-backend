@@ -56,6 +56,41 @@ class PlanUpgradeRequest(BaseModel):
     plan: str  # free | pro | admin
 
 
+@router.post(
+    "/admin/bootstrap",
+    summary="Promover o primeiro admin (uso único)",
+    status_code=status.HTTP_200_OK,
+)
+async def bootstrap_admin(
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+) -> dict:
+    """
+    Promove o usuário autenticado para admin.
+    APENAS funciona se ainda não existir nenhum usuário com plano 'admin'.
+    Endpoint de setup inicial — torna-se inoperante após o primeiro uso.
+    """
+    existing_admin = (await db.execute(
+        select(func.count(User.id)).where(User.plan == "admin")
+    )).scalar_one()
+
+    if existing_admin > 0:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bootstrap j\u00e1 foi realizado. Um administrador j\u00e1 existe.",
+        )
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usu\u00e1rio n\u00e3o encontrado")
+
+    user.plan = "admin"
+    await db.flush()
+    await db.refresh(user)
+    return {"message": f"Usu\u00e1rio {user.email} promovido a admin com sucesso.", "plan": "admin"}
+
+
 class GlobalStatsResponse(BaseModel):
     users_total: int
     users_by_plan: dict
