@@ -344,6 +344,11 @@ class TestDashboard:
 class TestPlanLimits:
     def test_limite_farm_free_plan(self, client, auth):
         """Usuário free não pode ter mais de 3 fazendas."""
+        # Verifica o plano atual — admin não tem limite
+        me = client.get("/api/v1/auth/me", headers=auth).json()
+        if me.get("plan") in ("admin", "pro"):
+            pytest.skip(f"Usuário tem plano '{me['plan']}' — sem limite de fazendas")
+
         # Descobre quantas fazendas já existem
         r = client.get("/api/v1/farms", headers=auth)
         existing = len(r.json())
