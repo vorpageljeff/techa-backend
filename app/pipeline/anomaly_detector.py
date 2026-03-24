@@ -134,6 +134,8 @@ async def detect_and_save(
     cloud_cover_pct: float,
     db,
     user_fcm_token: Optional[str] = None,
+    user_email: Optional[str] = None,
+    user_name: str = "",
     farm_name: str = "",
     field_name: str = "",
 ) -> Optional["Anomaly"]:
@@ -183,22 +185,52 @@ async def detect_and_save(
 
     logger.info(f"Anomalia salva: id={anomaly.id} | status=active")
 
-    # Envia push notification se FCM token disponível
+    _farm  = farm_name  or "Fazenda"
+    _field = field_name or "Talh\u00e3o"
+    alert_sent = False
+
+    # ── Push FCM (mobile) ────────────────────────────────────────
     if user_fcm_token:
         try:
             from app.services.notification import notify_anomaly
             push_sent = await notify_anomaly(
                 fcm_token=user_fcm_token,
-                farm_name=farm_name or f"Fazenda",
-                field_name=field_name or f"Talhão",
+                farm_name=_farm,
+                field_name=_field,
                 ndvi_drop_pct=stats.ndvi_drop_pct,
                 anomaly_id=str(anomaly.id),
             )
             if push_sent:
-                anomaly.push_sent = True
-                anomaly.alert_sent_at = datetime.now(timezone.utc)
-                await db.flush()
+                alert_sent = True
         except Exception as exc:
             logger.error(f"Falha ao enviar FCM para anomalia {anomaly.id}: {exc}")
+
+    # ── E-mail (fallback / adicional ao FCM) ─────────────────────
+    if user_email:
+        try:
+            import asyncio
+            from app.core.email import send_anomaly_alert
+            # send_anomaly_alert é síncrono — executa em thread pool
+            loop = asyncio.get_event_loop()
+            email_sent = await loop.run_in_executor(
+                None,
+                send_anomaly_alert,
+                user_email,
+                user_name or "Produtor",
+                _farm,
+                _field,
+                stats.ndvi_drop_pct,
+                stats.affected_area_ha,
+                str(anomaly.id),
+            )
+            if email_sent:
+                alert_sent = True
+        except Exception as exc:
+            logger.error(f"Falha ao enviar e-mail para anomalia {anomaly.id}: {exc}")
+
+    if alert_sent:
+        anomaly.push_sent = True
+        anomaly.alert_sent_at = datetime.now(timezone.utc)
+        await db.flush()
 
     return anomaly

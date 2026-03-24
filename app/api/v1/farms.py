@@ -12,10 +12,25 @@ from sqlalchemy import select
 
 from app.core.database import get_db
 from app.core.security import get_current_user_id
+from sqlalchemy import func
 from app.models.farm import Farm
+from app.models.field import Field
+from app.models.user import User
 from app.schemas.farm import FarmCreate, FarmUpdate, FarmResponse
 
 router = APIRouter()
+
+# ── Limites de plano ──────────────────────────────────────────────
+_PLAN_LIMITS = {
+    "free":  {"farms": 3,  "fields_per_farm": 5},
+    "pro":   {"farms": 50, "fields_per_farm": 200},
+    "admin": {"farms": 9999, "fields_per_farm": 9999},
+}
+
+
+async def _get_user_plan(user_id: UUID, db: AsyncSession) -> str:
+    result = await db.execute(select(User.plan).where(User.id == user_id))
+    return result.scalar_one_or_none() or "free"
 
 
 @router.post(
@@ -30,6 +45,20 @@ async def create_farm(
     user_id: UUID = Depends(get_current_user_id),
 ) -> FarmResponse:
     """Cria uma nova fazenda vinculada ao usuário autenticado."""
+    # ── Verificação de limite por plano ──────────────────────────
+    plan = await _get_user_plan(user_id, db)
+    limit = _PLAN_LIMITS.get(plan, _PLAN_LIMITS["free"])["farms"]
+    count_result = await db.execute(
+        select(func.count(Farm.id)).where(Farm.user_id == user_id)
+    )
+    current_count = count_result.scalar_one()
+    if current_count >= limit:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Plano '{plan}' permite no m\u00e1ximo {limit} fazenda(s). "
+                   f"Fa\u00e7a upgrade para criar mais.",
+        )
+
     farm = Farm(
         user_id=user_id,
         name=data.name,

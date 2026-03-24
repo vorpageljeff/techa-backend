@@ -50,7 +50,7 @@ async def run_pipeline_cycle() -> None:
         async with AsyncSessionLocal() as db:
             # Busca talhões com fazenda, user e fcm_token em uma query
             result = await db.execute(
-                select(Field, Farm.name, User.fcm_token)
+                select(Field, Farm.name, User.fcm_token, User.email, User.name)
                 .join(Farm, Field.farm_id == Farm.id)
                 .join(User, Farm.user_id == User.id)
                 .where(Farm.user_id.isnot(None))
@@ -64,11 +64,13 @@ async def run_pipeline_cycle() -> None:
         logger.info(f"Processando {len(rows)} talhão(ões)...")
         ok, errors = 0, 0
 
-        for field, farm_name, user_fcm_token in rows:
+        for field, farm_name, user_fcm_token, user_email, user_name in rows:
             success = await _process_field(
                 field=field,
                 farm_name=farm_name or "",
                 user_fcm_token=user_fcm_token,
+                user_email=user_email,
+                user_name=user_name or "",
             )
             if success:
                 ok += 1
@@ -88,19 +90,21 @@ async def _process_field(
     field: "Field",
     farm_name: str = "",
     user_fcm_token: Optional[str] = None,
+    user_email: Optional[str] = None,
+    user_name: str = "",
 ) -> bool:
     """
     Processa o pipeline completo para um único talhão.
 
     Fluxo:
-      1. Calcula bbox do talhão a partir da geometria PostGIS
+      1. Calcula bbox do talhão a partir da geometria WKT
       2. Busca imagens Sentinel-2 disponíveis (STAC)
       3. Baixa bandas B04, B08, SCL
       4. Aplica SCL mask (descarta se nuvem > 20%)
       5. Calcula NDVI e estatísticas
       6. Salva SatelliteAnalysis no banco
       7. Detecta anomalia e salva se necessário
-      8. Envia push FCM se anomalia detectada
+      8. Envia push FCM + e-mail se anomalia detectada
 
     Returns:
         True se processado com sucesso, False em caso de erro.
@@ -195,6 +199,8 @@ async def _process_field(
                     cloud_cover_pct=preproc.cloud_cover_pct,
                     db=db,
                     user_fcm_token=user_fcm_token,
+                    user_email=user_email,
+                    user_name=user_name,
                     farm_name=farm_name,
                     field_name=field_name,
                 )

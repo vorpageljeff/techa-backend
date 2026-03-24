@@ -131,6 +131,30 @@ async def create_field(
     """
     await _get_farm_or_404(farm_id, user_id, db)
 
+    # ── Verificação de limite por plano ──────────────────────────
+    from sqlalchemy import func as _func
+    from app.models.user import User
+
+    plan_result = await db.execute(
+        select(User.plan)
+        .join(Farm, Farm.user_id == User.id)
+        .where(Farm.id == farm_id)
+    )
+    user_plan = plan_result.scalar_one_or_none() or "free"
+    _FIELD_LIMITS = {"free": 5, "pro": 200, "admin": 9999}
+    field_limit = _FIELD_LIMITS.get(user_plan, 5)
+
+    count_result = await db.execute(
+        select(_func.count(Field.id)).where(Field.farm_id == farm_id)
+    )
+    current_fields = count_result.scalar_one()
+    if current_fields >= field_limit:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Plano '{user_plan}' permite no m\u00e1ximo {field_limit} talh\u00e3o(ões) por fazenda. "
+                   f"Fa\u00e7a upgrade para adicionar mais.",
+        )
+
     # Converte GeoJSON → Shapely para cálculo de área e WKT
     try:
         shapely_geom = shape(data.geometry)
