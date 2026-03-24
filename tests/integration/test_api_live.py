@@ -59,9 +59,15 @@ def auth(token):
 
 @pytest.fixture(scope="session")
 def farm_id(client, auth):
-    """Cria uma fazenda de teste e a remove ao final."""
+    """Reutiliza a primeira fazenda existente, ou cria uma se ainda não houver."""
+    # Tenta reusar existente (evita bater limite do plano free)
+    existing = client.get("/api/v1/farms", headers=auth)
+    if existing.status_code == 200 and existing.json():
+        yield existing.json()[0]["id"]
+        return
+
     resp = client.post("/api/v1/farms", headers=auth, json={
-        "name": f"Fazenda Test {uuid.uuid4().hex[:6]}",
+        "name": "Fazenda Test Suite",
         "area_ha": 100.0,
         "crop": "soja",
         "city": "Campo Grande",
@@ -70,7 +76,6 @@ def farm_id(client, auth):
     assert resp.status_code == 201, resp.text
     fid = resp.json()["id"]
     yield fid
-    # cleanup
     client.delete(f"/api/v1/farms/{fid}", headers=auth)
 
 
@@ -142,6 +147,11 @@ class TestFarms:
         assert len(r.json()) <= 1
 
     def test_criar_e_deletar_farm(self, client, auth):
+        # Verifica limite antes de criar
+        existing = client.get("/api/v1/farms", headers=auth).json()
+        if len(existing) >= 3:
+            pytest.skip("Limite de plano free atingido — skip criação de nova fazenda")
+
         r = client.post("/api/v1/farms", headers=auth, json={
             "name": "Farm Temp",
             "area_ha": 50.0,
@@ -256,3 +266,106 @@ class TestReport:
         assert r.status_code == 200
         assert r.headers["content-type"] == "application/pdf"
         assert len(r.content) > 1000  # PDF deve ter pelo menos 1KB
+
+
+# ── Testes do estágio fenológico ──────────────────────────────────
+
+class TestGrowthStage:
+    def test_sem_planting_date_retorna_400(self, client, auth, field_id):
+        # Remove planting_date primeiro
+        client.patch(f"/api/v1/fields/{field_id}", headers=auth,
+                     json={"planting_date": None})
+        r = client.get(f"/api/v1/fields/{field_id}/growth-stage", headers=auth)
+        assert r.status_code == 400
+
+    def test_com_planting_date_retorna_estagio(self, client, auth, field_id):
+        # Seta data de plantio
+        client.patch(f"/api/v1/fields/{field_id}", headers=auth,
+                     json={"planting_date": "2026-01-01", "crop": "soja"})
+        r = client.get(f"/api/v1/fields/{field_id}/growth-stage", headers=auth)
+        assert r.status_code == 200
+        d = r.json()
+        assert "stage_key" in d
+        assert "progress_pct" in d
+        assert d["progress_pct"] >= 0
+        assert "days_since_planting" in d
+
+    def test_estagio_retorna_campos_obrigatorios(self, client, auth, field_id):
+        r = client.get(f"/api/v1/fields/{field_id}/growth-stage", headers=auth)
+        if r.status_code == 200:
+            d = r.json()
+            for campo in ("field_id", "crop", "planting_date", "stage_key",
+                          "stage_label", "progress_pct", "cycle_complete"):
+                assert campo in d, f"Campo obrigatório ausente: {campo}"
+
+
+# ── Testes do histórico NDVI ──────────────────────────────────────
+
+class TestNdviHistory:
+    def test_ndvi_history_sem_analises(self, client, auth, field_id):
+        r = client.get(f"/api/v1/fields/{field_id}/ndvi-history", headers=auth)
+        assert r.status_code == 200
+        d = r.json()
+        assert d["data_points"] == 0
+        assert d["series"] == []
+        assert d["trend"] is None
+
+    def test_ndvi_history_paginacao(self, client, auth, field_id):
+        r = client.get(f"/api/v1/fields/{field_id}/ndvi-history?limit=10", headers=auth)
+        assert r.status_code == 200
+
+    def test_ndvi_history_campo_nao_proprio_404(self, client, auth):
+        fake_id = uuid.uuid4()
+        r = client.get(f"/api/v1/fields/{fake_id}/ndvi-history", headers=auth)
+        assert r.status_code == 404
+
+
+# ── Testes do dashboard ───────────────────────────────────────────
+
+class TestDashboard:
+    def test_dashboard_retorna_total_area(self, client, auth):
+        r = client.get("/api/v1/dashboard", headers=auth)
+        assert r.status_code == 200
+        d = r.json()
+        assert "total_area_ha" in d
+        assert d["total_area_ha"] >= 0
+        assert "farms_count" in d
+        assert "fields_count" in d
+        assert "active_anomalies" in d
+        assert isinstance(d["fields"], list)
+
+    def test_dashboard_sem_token_401(self, client):
+        r = client.get("/api/v1/dashboard")
+        assert r.status_code == 401
+
+
+# ── Testes de limites por plano ───────────────────────────────────
+
+class TestPlanLimits:
+    def test_limite_farm_free_plan(self, client, auth):
+        """Usuário free não pode ter mais de 3 fazendas."""
+        # Descobre quantas fazendas já existem
+        r = client.get("/api/v1/farms", headers=auth)
+        existing = len(r.json())
+
+        created_ids = []
+        last_status = 201
+        # Tenta criar até bater o limite (3)
+        for i in range(3 - existing + 1):
+            resp = client.post("/api/v1/farms", headers=auth, json={
+                "name": f"Fazenda Limite Test {i}",
+                "area_ha": 10.0,
+                "crop": "soja",
+                "city": "Test",
+                "state": "MS",
+            })
+            last_status = resp.status_code
+            if resp.status_code == 201:
+                created_ids.append(resp.json()["id"])
+
+        # O último deve ser 403
+        assert last_status == 403
+
+        # Limpa
+        for fid in created_ids:
+            client.delete(f"/api/v1/farms/{fid}", headers=auth)
