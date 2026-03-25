@@ -273,12 +273,12 @@ async def forgot_password(
         loop = _asyncio.get_event_loop()
         try:
             sent = await loop.run_in_executor(
-                None, send_reset_code, user.email, user.name, code
+                None, send_reset_code, user.email.lower(), user.name, code
             )
             if sent:
-                logger.info(f"Email OTP enviado para {user.email}")
+                logger.info(f"Email OTP enviado para {user.email.lower()}")
             else:
-                logger.error(f"Email OTP NAO enviado para {user.email} — verifique GMAIL_USER/GMAIL_APP_PASSWORD")
+                logger.error(f"Email OTP NAO enviado para {user.email.lower()} — verifique configuracao Resend")
         except Exception as email_err:
             logger.error(f"Excecao ao enviar email OTP para {user.email}: {email_err}")
 
