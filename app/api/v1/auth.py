@@ -10,7 +10,7 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Request, status, BackgroundTasks
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from uuid import UUID
 from loguru import logger
@@ -54,8 +54,9 @@ async def register(
     Cria uma nova conta de usuário.
     Retorna os dados do usuário criado (sem senha).
     """
-    # Verifica se e-mail já está em uso
-    result = await db.execute(select(User).where(User.email == data.email))
+    # Verifica se e-mail já está em uso (case-insensitive)
+    email_lower = data.email.strip().lower()
+    result = await db.execute(select(User).where(func.lower(User.email) == email_lower))
     if result.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -64,7 +65,7 @@ async def register(
 
     user = User(
         name=data.name.strip(),
-        email=data.email,
+        email=email_lower,
         password=hash_password(data.password),
     )
     db.add(user)
@@ -88,7 +89,7 @@ async def login(
     Autentica com e-mail e senha.
     Retorna um Bearer token JWT válido por 30 dias.
     """
-    result = await db.execute(select(User).where(User.email == data.email))
+    result = await db.execute(select(User).where(func.lower(User.email) == data.email.strip().lower()))
     user = result.scalar_one_or_none()
 
     # Mensagem genérica para não revelar se o e-mail existe
@@ -249,7 +250,7 @@ async def forgot_password(
     (resposta genérica para não revelar cadastros).
     """
     # Busca o usuário — resposta genérica independente de existir ou não
-    result = await db.execute(select(User).where(User.email == data.email))
+    result = await db.execute(select(User).where(func.lower(User.email) == data.email.strip().lower()))
     user = result.scalar_one_or_none()
 
     if user and user.is_active:
