@@ -347,8 +347,8 @@ async def reset_password(
             detail="Código inválido ou expirado. Solicite um novo código.",
         )
 
-    # Busca o usuário
-    result = await db.execute(select(User).where(User.email == data.email))
+    # Busca o usuário (case-insensitive)
+    result = await db.execute(select(User).where(func.lower(User.email) == data.email.strip().lower()))
     user   = result.scalar_one_or_none()
 
     if not user or not user.is_active:
