@@ -22,7 +22,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 # Coleção correta: tudo minúsculo com hifens (CRÍTICO)
 SENTINEL_COLLECTION = "sentinel-2-l2a"
-MAX_CLOUD_COVER = 20
+MAX_CLOUD_COVER = 30
 DAYS_BACK = 15
 
 # OData: busca de produtos (catálogo)
