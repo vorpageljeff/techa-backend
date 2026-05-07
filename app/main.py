@@ -38,16 +38,21 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("Banco de dados inacessível")
     logger.info("✅ Banco de dados conectado")
 
-    # Inicia o scheduler de verificação do Sentinel-2
-    # (importado aqui para evitar import circular)
-    from app.pipeline.scheduler import start_scheduler
-    scheduler = start_scheduler()
-    logger.info("✅ Scheduler Sentinel-2 iniciado")
+    scheduler = None
+    if settings.ENABLE_PIPELINE:
+        # Inicia o scheduler de verificação do Sentinel-2
+        # (importado aqui para evitar import circular)
+        from app.pipeline.scheduler import start_scheduler
+        scheduler = start_scheduler()
+        logger.info("✅ Scheduler Sentinel-2 iniciado")
+    else:
+        logger.info("⚙️ Scheduler Sentinel-2 desabilitado via ENABLE_PIPELINE=false")
 
     yield  # aplicação rodando
 
     # ── Shutdown ─────────────────────────────────────────────────
-    scheduler.shutdown(wait=False)
+    if scheduler:
+        scheduler.shutdown(wait=False)
     logger.info("👋 Techá API encerrada")
 
 

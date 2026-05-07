@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     CLOUD_COVER_THRESHOLD: float = 20.0   # % máximo de nuvem aceito
     NDVI_DROP_THRESHOLD: float = 15.0     # % mínimo de queda de NDVI
 
+    # ── Pipeline e deploy ─────────────────────────────────────────
+    ENABLE_PIPELINE: bool = True          # permite desabilitar scheduler em hosts API-only
+
     # ── Thresholds de Área por Tamanho de Talhão ──────────────────
     # (corresponde à regra de negócio validada com o agrônomo)
     ALERT_AREA_PCT_SMALL: float = 3.0     # talhões até 100ha

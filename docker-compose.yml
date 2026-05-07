@@ -43,18 +43,20 @@ services:
       timeout: 3s
       retries: 3
 
-  # ── API FastAPI (apenas em produção — dev roda local) ─────────────
-  # api:
-  #   build: .
-  #   container_name: techa_api
-  #   env_file: .env
-  #   ports:
-  #     - "8000:8000"
-  #   depends_on:
-  #     db:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_healthy
+  # ── API FastAPI (desenvolvimento local com banco e Redis) ─────
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: techa_api
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
 volumes:
   techa_postgres_data:

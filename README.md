@@ -56,6 +56,25 @@ python -m app.main
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+### 7. Execução em ambiente de produção / deploy
+- A API principal pode ser executada em qualquer host ou container com conexão ao PostgreSQL e Redis.
+- O pipeline de Sentinel-2 é iniciado automaticamente apenas quando `ENABLE_PIPELINE=true`.
+- Para rodar a API sem o scheduler no mesmo serviço (útil para deploy serverless ou plataforma de APIs), use:
+  ```bash
+  ENABLE_PIPELINE=false uvicorn app.main:app --host 0.0.0.0 --port 8000
+  ```
+- Use `docker compose up --build` para iniciar `db`, `redis` e `api` juntos localmente.
+
+### Observação sobre Vercel
+- Vercel é otimizado para funções serverless e frontends. Este projeto é um backend FastAPI com agendador e uso de Postgres/Redis, portanto não é uma boa escolha para deploy completo.
+- Para um backend como este, prefira plataformas que suportam containers ou processos long-running, como Railway, Render, Fly.io, Heroku ou DigitalOcean.
+- Se você quiser uma versão online rápida, o mais prático é criar um container Docker e implantar em uma dessas plataformas.
+
+### Android / mobile
+- Esta API já está preparada para ser consumida por um app Android: basta que o app aponte para o endpoint HTTPS público.
+- O projeto atual é o backend; o cliente Android precisa ser um app separado que consuma as rotas `/api/v1/...`.
+- O uso de `FastAPI` significa que qualquer app Android pode se conectar sem mudanças na API, desde que a API esteja hospedada e acessível na internet.
+
 ### 7. Acesse a documentação
 - Swagger UI: http://localhost:8000/docs
 - Health Check: http://localhost:8000/health
