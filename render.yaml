@@ -42,8 +42,9 @@ services:
     name: techa-redis
     plan: free
     region: virginia
-    ipAllowList: []
-    maxmemoryPolicy: volatile-ttl
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: everywhere
 
 databases:
   - name: techa-db
@@ -52,4 +53,3 @@ databases:
     postgresMajorVersion: "15"
     databaseName: techa_db
     user: techa_user
-    ipAllowList: []
