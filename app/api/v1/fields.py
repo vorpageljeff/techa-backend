@@ -12,7 +12,7 @@ from datetime import datetime, date, timezone
 
 import csv
 import io
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +28,7 @@ from app.models.farm import Farm
 from app.models.satellite_analysis import SatelliteAnalysis
 from app.models.anomaly import Anomaly
 from app.schemas.field import FieldCreate, FieldUpdate, FieldResponse
+from app.services.kml_importer import parse_kml_polygons
 from app.services.report_service import generate_field_report
 
 router = APIRouter()
@@ -80,6 +81,84 @@ def _field_to_response(field: Field) -> dict:
         "geometry": _geom_to_geojson(field.geometry),
         "created_at": field.created_at,
     }
+
+
+async def _check_field_limit(
+    farm_id: UUID,
+    db: AsyncSession,
+    new_fields_count: int = 1,
+) -> None:
+    from sqlalchemy import func as _func
+    from app.models.user import User
+
+    plan_result = await db.execute(
+        select(User.plan)
+        .join(Farm, Farm.user_id == User.id)
+        .where(Farm.id == farm_id)
+    )
+    user_plan = plan_result.scalar_one_or_none() or "free"
+    field_limits = {"free": 5, "pro": 200, "admin": 9999}
+    field_limit = field_limits.get(user_plan, 5)
+
+    count_result = await db.execute(
+        select(_func.count(Field.id)).where(Field.farm_id == farm_id)
+    )
+    current_fields = count_result.scalar_one()
+    if current_fields + new_fields_count > field_limit:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Plano '{user_plan}' permite no máximo {field_limit} talhão(ões) "
+                "por fazenda. Faça upgrade para adicionar mais."
+            ),
+        )
+
+
+async def _insert_field_from_geometry(
+    farm_id: UUID,
+    name: str,
+    crop: Optional[str],
+    planting_date: Optional[date],
+    geometry: dict,
+    db: AsyncSession,
+) -> Field:
+    try:
+        shapely_geom = shape(geometry)
+        if not shapely_geom.is_valid:
+            shapely_geom = shapely_geom.buffer(0)
+        area_ha = _calc_area_ha(shapely_geom)
+        wkt_text = shapely_geom.wkt
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Geometria inválida: {exc}",
+        )
+
+    field_id = _uuid.uuid4()
+    now = datetime.now(timezone.utc)
+
+    await db.execute(
+        text("""
+            INSERT INTO fields
+                (id, farm_id, name, crop, planting_date, geometry, area_ha, created_at)
+            VALUES
+                (:id, :farm_id, :name, :crop, :planting_date,
+                 :geom, :area_ha, :created_at)
+        """),
+        {
+            "id": str(field_id),
+            "farm_id": str(farm_id),
+            "name": name,
+            "crop": crop,
+            "planting_date": planting_date,
+            "geom": wkt_text,
+            "area_ha": round(area_ha, 4),
+            "created_at": now,
+        },
+    )
+
+    result = await db.execute(select(Field).where(Field.id == field_id))
+    return result.scalar_one()
 
 
 async def _get_farm_or_404(
@@ -198,6 +277,77 @@ async def create_field(
     result = await db.execute(select(Field).where(Field.id == field_id))
     field = result.scalar_one()
     return _field_to_response(field)
+
+
+@router.post(
+    "/farms/{farm_id}/fields/import-kml",
+    response_model=list[FieldResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Importar talhão real a partir de KML",
+)
+async def import_fields_from_kml(
+    farm_id: UUID,
+    file: UploadFile = File(...),
+    name: Optional[str] = Form(None),
+    crop: Optional[str] = Form(None),
+    planting_date: Optional[date] = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+) -> list[FieldResponse]:
+    """
+    Importa polígonos KML exportados do Google Earth como talhões.
+
+    Cada Placemark com Polygon vira um talhão. Se `name` for enviado, ele é
+    usado quando o KML tiver apenas um polígono; caso contrário, usa o nome do
+    Placemark ou o nome do arquivo.
+    """
+    await _get_farm_or_404(farm_id, user_id, db)
+
+    filename = file.filename or "talhao.kml"
+    if not filename.lower().endswith((".kml", ".xml")):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Envie um arquivo .kml válido.",
+        )
+
+    raw = await file.read()
+    try:
+        kml_text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="KML deve estar em UTF-8.",
+        )
+
+    try:
+        polygons = parse_kml_polygons(kml_text)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+
+    await _check_field_limit(farm_id, db, new_fields_count=len(polygons))
+
+    created: list[FieldResponse] = []
+    base_name = filename.rsplit(".", 1)[0].replace("_", " ").strip()
+    for index, polygon in enumerate(polygons, start=1):
+        field_name = (
+            name.strip()
+            if name and len(polygons) == 1
+            else polygon.name or f"{base_name} {index}"
+        )
+        field = await _insert_field_from_geometry(
+            farm_id=farm_id,
+            name=field_name,
+            crop=crop,
+            planting_date=planting_date,
+            geometry=polygon.geometry,
+            db=db,
+        )
+        created.append(_field_to_response(field))
+
+    return created
 
 
 @router.get(
