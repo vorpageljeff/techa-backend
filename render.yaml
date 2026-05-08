@@ -8,7 +8,6 @@ services:
     dockerfilePath: ./docker/Dockerfile
     dockerContext: .
     healthCheckPath: /health
-    preDeployCommand: alembic upgrade head
     autoDeployTrigger: commit
     envVars:
       - key: PORT
