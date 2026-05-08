@@ -75,6 +75,7 @@ app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"] if not settings.is_production else settings.cors_allowed_origins,
+    allow_origin_regex=None if not settings.is_production else settings.CORS_ALLOWED_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -30,6 +30,7 @@ class Settings(BaseSettings):
         "http://127.0.0.1:8081,"
         "http://127.0.0.1:19006"
     )
+    CORS_ALLOWED_ORIGIN_REGEX: str = r"https://.*\.vercel\.app"
     SECRET_KEY: str
 
     # ── Banco de Dados ────────────────────────────────────────────
