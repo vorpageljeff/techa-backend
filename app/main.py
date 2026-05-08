@@ -17,7 +17,7 @@ from app.core.logging import setup_logging
 from app.core.limiter import limiter
 
 # Importa routers
-from app.api.v1 import auth, farms, fields, anomalies, dashboard, admin
+from app.api.v1 import auth, farms, fields, anomalies, inspections, dashboard, admin
 
 
 @asynccontextmanager
@@ -87,6 +87,7 @@ app.include_router(auth.router,       prefix=PREFIX, tags=["Auth"])
 app.include_router(farms.router,      prefix=PREFIX, tags=["Fazendas"])
 app.include_router(fields.router,     prefix=PREFIX, tags=["Talh\u00f5es"])
 app.include_router(anomalies.router,  prefix=PREFIX, tags=["Anomalias"])
+app.include_router(inspections.router, prefix=PREFIX, tags=["Inspe\u00e7\u00f5es"])
 app.include_router(dashboard.router,  prefix=PREFIX, tags=["Dashboard"])
 app.include_router(admin.router,      prefix=PREFIX, tags=["Admin"])
 
