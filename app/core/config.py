@@ -38,8 +38,8 @@ class Settings(BaseSettings):
     JWT_EXPIRY_DAYS: int = 30
 
     # ── Copernicus / Sentinel-2 ───────────────────────────────────
-    COPERNICUS_CLIENT_ID: str
-    COPERNICUS_CLIENT_SECRET: str
+    COPERNICUS_CLIENT_ID: str = ""
+    COPERNICUS_CLIENT_SECRET: str = ""
     COPERNICUS_TOKEN_URL: str = (
         "https://identity.dataspace.copernicus.eu/auth/realms/"
         "CDSE/protocol/openid-connect/token"
