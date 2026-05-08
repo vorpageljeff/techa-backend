@@ -39,7 +39,7 @@ async function apiRequest(path, options = {}) {
 }
 
 export default function App() {
-  const [mode, setMode] = useState("login");
+  const [mode, setMode] = useState("register");
   const [apiStatus, setApiStatus] = useState(null);
   const [loadingHealth, setLoadingHealth] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -156,7 +156,7 @@ export default function App() {
               </Text>
             </View>
             <Pressable style={styles.iconButton} onPress={loadHealth}>
-              {loadingHealth ? <ActivityIndicator color="#e8fff6" /> : <Text style={styles.iconText}>↻</Text>}
+              {loadingHealth ? <ActivityIndicator color="#e8fff6" /> : <Text style={styles.iconText}>R</Text>}
             </Pressable>
           </View>
 

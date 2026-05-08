@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     APP_DEBUG: bool = True
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8000
+    CORS_ALLOWED_ORIGINS: str = (
+        "https://app.techa.com.py,"
+        "http://localhost:8081,"
+        "http://localhost:19006,"
+        "http://127.0.0.1:8081,"
+        "http://127.0.0.1:19006"
+    )
     SECRET_KEY: str
 
     # ── Banco de Dados ────────────────────────────────────────────
@@ -112,6 +119,14 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.APP_ENV == "production"
+
+    @property
+    def cors_allowed_origins(self) -> list[str]:
+        return [
+            origin.strip()
+            for origin in self.CORS_ALLOWED_ORIGINS.split(",")
+            if origin.strip()
+        ]
 
     model_config = {
         "env_file": ".env",

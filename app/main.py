@@ -74,7 +74,7 @@ app.add_middleware(SlowAPIMiddleware)
 # ── CORS ──────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if not settings.is_production else ["https://app.techa.com.py"],
+    allow_origins=["*"] if not settings.is_production else settings.cors_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
