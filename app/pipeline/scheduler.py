@@ -4,6 +4,7 @@
 # Usa AsyncIOScheduler para funcionar no loop asyncio do FastAPI
 # ─────────────────────────────────────────────────────────────────
 
+from datetime import datetime, timezone
 from uuid import UUID
 from typing import Optional
 
@@ -25,6 +26,7 @@ def start_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
         max_instances=1,        # evita execuções sobrepostas
         misfire_grace_time=300, # tolera atraso de até 5 min antes de pular
+        next_run_time=datetime.now(timezone.utc),
     )
     scheduler.start()
     logger.info("✅ Scheduler Sentinel-2 iniciado — ciclo a cada 30 minutos")
