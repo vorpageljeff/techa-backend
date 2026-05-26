@@ -361,7 +361,7 @@ def _download_file(url: str, dest: Path, token: str) -> None:
 def download_bands(
     stac_item,
     field_id: str,
-    save_dir: str = "/data/rasters",
+    save_dir: str | None = None,
 ) -> Optional[dict[str, Path]]:
     """
     Baixa as bandas B04 (RED), B08 (NIR) e SCL de um item STAC
@@ -375,13 +375,16 @@ def download_bands(
     Args:
         stac_item: pystac.Item retornado por search_images()
         field_id:  UUID do talhão — organiza o diretório de destino
-        save_dir:  raiz do armazenamento local (default: /data/rasters)
+        save_dir:  raiz do armazenamento local. Se omitido, usa RASTER_STORAGE_PATH.
 
     Returns:
         dict com chaves 'B04', 'B08', 'SCL' e Path local de cada arquivo,
         ou None se o download falhar.
     """
     try:
+        if save_dir is None:
+            save_dir = os.getenv("RASTER_STORAGE_PATH", "/data/rasters")
+
         token = _get_token()
         product_name = stac_item.id
         date_str = stac_item.datetime.strftime("%Y-%m-%d")
