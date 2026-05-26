@@ -9,11 +9,12 @@ import uuid as _uuid
 from uuid import UUID
 from typing import Any, Optional
 from datetime import datetime, date, timezone
+from pathlib import Path
 
 import csv
 import io
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
@@ -30,6 +31,7 @@ from app.models.anomaly import Anomaly
 from app.schemas.field import FieldCreate, FieldUpdate, FieldResponse
 from app.services.kml_importer import parse_kml_polygons
 from app.services.report_service import generate_field_report
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -47,6 +49,8 @@ class SatelliteAnalysisResponse(BaseModel):
     ndvi_mean: Optional[float] = None
     ndvi_min: Optional[float] = None
     ndvi_max: Optional[float] = None
+    tiles_path: Optional[str] = None
+    tile_url: Optional[str] = None
     status: str
     processed_at: datetime
 
@@ -67,6 +71,30 @@ def _geom_to_geojson(wkt_text) -> dict | None:
         return dict(mapping(shapely_wkt.loads(wkt_text)))
     except Exception:
         return None
+
+
+def _tile_path_for_field(field_id: UUID) -> Path:
+    return Path(settings.TILES_STORAGE_PATH) / str(field_id) / "ndvi_latest.png"
+
+
+def _analysis_to_response(analysis: SatelliteAnalysis) -> dict:
+    tile_path = analysis.tiles_path or str(_tile_path_for_field(analysis.field_id))
+    has_tile = bool(tile_path and Path(tile_path).exists())
+
+    return {
+        "id": analysis.id,
+        "field_id": analysis.field_id,
+        "image_date": analysis.image_date,
+        "source": analysis.source,
+        "cloud_cover_pct": analysis.cloud_cover_pct,
+        "ndvi_mean": analysis.ndvi_mean,
+        "ndvi_min": analysis.ndvi_min,
+        "ndvi_max": analysis.ndvi_max,
+        "tiles_path": tile_path if has_tile else analysis.tiles_path,
+        "tile_url": f"/api/v1/fields/{analysis.field_id}/ndvi-tile" if has_tile else None,
+        "status": analysis.status,
+        "processed_at": analysis.processed_at,
+    }
 
 
 def _field_to_response(field: Field) -> dict:
@@ -419,7 +447,8 @@ async def list_analyses(
         .limit(limit)
         .offset(offset)
     )
-    return result.scalars().all()
+    analyses = result.scalars().all()
+    return [_analysis_to_response(a) for a in analyses]
 
 
 @router.get(
@@ -501,7 +530,42 @@ async def get_latest_analysis(
             status_code=404,
             detail="Nenhuma análise disponível para este talhão ainda",
         )
-    return analysis
+    return _analysis_to_response(analysis)
+
+
+@router.get(
+    "/fields/{field_id}/ndvi-tile",
+    summary="Imagem PNG NDVI mais recente de um talhao",
+)
+async def get_ndvi_tile(
+    field_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+) -> FileResponse:
+    await _get_field_owned_or_404(field_id, user_id, db)
+
+    result = await db.execute(
+        select(SatelliteAnalysis)
+        .where(
+            SatelliteAnalysis.field_id == field_id,
+            SatelliteAnalysis.status == "valid",
+        )
+        .order_by(SatelliteAnalysis.image_date.desc())
+        .limit(1)
+    )
+    analysis = result.scalar_one_or_none()
+    if not analysis:
+        raise HTTPException(status_code=404, detail="Tile nao disponivel")
+
+    candidates = [
+        Path(analysis.tiles_path) if analysis.tiles_path else None,
+        _tile_path_for_field(field_id),
+    ]
+    tile_path = next((p for p in candidates if p and p.exists()), None)
+    if not tile_path:
+        raise HTTPException(status_code=404, detail="Tile nao disponivel")
+
+    return FileResponse(tile_path, media_type="image/png")
 
 
 @router.get(

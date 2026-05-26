@@ -116,6 +116,7 @@ async def _process_field(
     from app.pipeline.preprocessor import apply_scl_mask
     from app.pipeline.ndvi import compute_ndvi_stats, get_baseline_ndvi
     from app.pipeline.anomaly_detector import save_analysis, detect_and_save
+    from app.pipeline.tiles import generate_ndvi_png
 
     field_id = field.id
     field_area_ha = field.area_ha or 0.0
@@ -179,6 +180,12 @@ async def _process_field(
             field_area_ha=field_area_ha,
             baseline_ndvi_mean=baseline_ndvi,
         )
+        tiles_path = generate_ndvi_png(
+            b04=preproc.b04,
+            b08=preproc.b08,
+            field_id=field_id,
+            bounds=bbox,
+        )
 
         # ── 6. Salva análise + 7. Detecta anomalia + 8. FCM ──────
         async with AsyncSessionLocal() as db:
@@ -190,6 +197,7 @@ async def _process_field(
                 cloud_cover_pct=preproc.cloud_cover_pct,
                 raster_path=raster_path,
                 db=db,
+                tiles_path=tiles_path,
             )
 
             if baseline_ndvi is not None:
