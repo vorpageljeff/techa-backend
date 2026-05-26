@@ -5,6 +5,7 @@
 # ─────────────────────────────────────────────────────────────────
 
 from datetime import datetime, timezone
+from pathlib import Path
 from uuid import UUID
 from typing import Optional
 
@@ -262,9 +263,13 @@ async def _is_already_processed(field_id: UUID, image_date) -> bool:
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(
-            select(SatelliteAnalysis.id).where(
+            select(SatelliteAnalysis).where(
                 SatelliteAnalysis.field_id == field_id,
                 SatelliteAnalysis.image_date == image_date,
-            ).limit(1)
+            ).order_by(SatelliteAnalysis.processed_at.desc()).limit(1)
         )
-        return result.scalar_one_or_none() is not None
+        analysis = result.scalar_one_or_none()
+        if not analysis:
+            return False
+
+        return bool(analysis.tiles_path and Path(analysis.tiles_path).exists())
