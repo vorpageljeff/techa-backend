@@ -13,6 +13,7 @@ from pathlib import Path
 
 import csv
 import io
+import json
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel
@@ -51,6 +52,7 @@ class SatelliteAnalysisResponse(BaseModel):
     ndvi_max: Optional[float] = None
     tiles_path: Optional[str] = None
     tile_url: Optional[str] = None
+    bounds: Optional[list[float]] = None
     status: str
     processed_at: datetime
 
@@ -77,6 +79,28 @@ def _tile_path_for_field(field_id: UUID) -> Path:
     return Path(settings.TILES_STORAGE_PATH) / str(field_id) / "ndvi_latest.png"
 
 
+def _bounds_for_tile(tile_path: str | None) -> list[float] | None:
+    if not tile_path:
+        return None
+
+    meta_path = Path(tile_path).with_suffix(".json")
+    if not meta_path.exists():
+        return None
+
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        bounds = meta.get("bounds") or {}
+        west = bounds.get("west")
+        south = bounds.get("south")
+        east = bounds.get("east")
+        north = bounds.get("north")
+        if None in (west, south, east, north):
+            return None
+        return [west, south, east, north]
+    except Exception:
+        return None
+
+
 def _analysis_to_response(analysis: SatelliteAnalysis) -> dict:
     tile_path = analysis.tiles_path or str(_tile_path_for_field(analysis.field_id))
     has_tile = bool(tile_path and Path(tile_path).exists())
@@ -92,6 +116,7 @@ def _analysis_to_response(analysis: SatelliteAnalysis) -> dict:
         "ndvi_max": analysis.ndvi_max,
         "tiles_path": tile_path if has_tile else analysis.tiles_path,
         "tile_url": f"/api/v1/fields/{analysis.field_id}/ndvi-tile" if has_tile else None,
+        "bounds": _bounds_for_tile(tile_path) if has_tile else None,
         "status": analysis.status,
         "processed_at": analysis.processed_at,
     }
