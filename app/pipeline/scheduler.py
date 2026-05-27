@@ -131,9 +131,9 @@ async def _process_field(
             return False
 
         # ── 2. Busca imagens disponíveis ──────────────────────────
-        items = search_images(bbox, days_back=15)
+        items = search_images(bbox, days_back=60)
         if not items:
-            logger.info(f"Talhão {field_id}: nenhuma imagem disponível nos últimos 15 dias")
+            logger.info(f"Talhão {field_id}: nenhuma imagem disponível nos ultimos 60 dias")
             return True  # não é erro, apenas sem imagem nova
 
         # Usa a imagem mais recente (itens já ordenados por data)
