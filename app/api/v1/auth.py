@@ -42,14 +42,14 @@ def _make_otp() -> str:
 
 @router.post(
     "/auth/register",
-    response_model=UserResponse,
+    response_model=TokenResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Registrar novo usuário",
 )
 async def register(
     data: UserRegister,
     db: AsyncSession = Depends(get_db),
-) -> UserResponse:
+) -> TokenResponse:
     """
     Cria uma nova conta de usuário.
     Retorna os dados do usuário criado (sem senha).
@@ -71,7 +71,8 @@ async def register(
     db.add(user)
     await db.flush()
     await db.refresh(user)
-    return user
+    token = create_access_token(user.id)
+    return {"access_token": token, "token_type": "bearer"}
 
 
 @router.post(
@@ -279,8 +280,18 @@ async def forgot_password(
                 logger.info(f"Email OTP enviado para {user.email.lower()}")
             else:
                 logger.error(f"Email OTP NAO enviado para {user.email.lower()} — verifique configuracao Resend")
+                r.delete(key)
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Não foi possível enviar o e-mail de recuperação. Verifique a configuração de e-mail.",
+                )
         except Exception as email_err:
             logger.error(f"Excecao ao enviar email OTP para {user.email}: {email_err}")
+            r.delete(key)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Não foi possível enviar o e-mail de recuperação. Tente novamente em instantes.",
+            )
 
     return {
         "message": (
@@ -328,10 +339,10 @@ async def reset_password(
     Redefine a senha do usuário usando o código OTP recebido por e-mail.
     O código é consumido (invalidado) após uso bem-sucedido.
     """
-    if len(data.new_password) < 6:
+    if len(data.new_password) < 8:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="A nova senha deve ter pelo menos 6 caracteres.",
+            detail="A nova senha deve ter pelo menos 8 caracteres.",
         )
 
     key = f"{_RESET_PREFIX}{data.email.lower()}"

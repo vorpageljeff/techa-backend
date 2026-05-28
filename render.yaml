@@ -37,6 +37,12 @@ services:
           type: keyvalue
           name: techa-redis
           property: connectionString
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM_ADDRESS
+        sync: false
+      - key: EMAIL_FROM_NAME
+        value: "Techá - InnovAgro"
 
   - type: keyvalue
     name: techa-redis
