@@ -2,17 +2,13 @@ services:
   - type: web
     name: techa-backend
     runtime: docker
-    plan: starter
+    plan: free
     region: virginia
     branch: main
     dockerfilePath: ./docker/Dockerfile
     dockerContext: .
     healthCheckPath: /health
     autoDeployTrigger: commit
-    disk:
-      name: techa-data
-      mountPath: /data
-      sizeGB: 10
     envVars:
       - key: PORT
         value: "10000"
@@ -29,9 +25,9 @@ services:
       - key: ENABLE_PIPELINE
         value: "true"
       - key: TILES_STORAGE_PATH
-        value: /data/tiles
+        value: /tmp/techa/tiles
       - key: RASTER_STORAGE_PATH
-        value: /data/rasters
+        value: /tmp/techa/rasters
       - key: SECRET_KEY
         generateValue: true
       - key: JWT_SECRET_KEY

@@ -57,8 +57,8 @@ class Settings(BaseSettings):
     )
 
     # ── Storage ───────────────────────────────────────────────────
-    TILES_STORAGE_PATH: str = "/data/tiles"
-    RASTER_STORAGE_PATH: str = "/data/rasters"
+    TILES_STORAGE_PATH: str = "/tmp/techa/tiles"
+    RASTER_STORAGE_PATH: str = "/tmp/techa/rasters"
 
     # ── Email ─────────────────────────────────────────────────────
     # Resend (HTTP API — recomendado em produção/Railway)

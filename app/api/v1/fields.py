@@ -79,6 +79,18 @@ def _tile_path_for_field(field_id: UUID) -> Path:
     return Path(settings.TILES_STORAGE_PATH) / str(field_id) / "ndvi_latest.png"
 
 
+def _bounds_for_field(field: Field | None) -> list[float] | None:
+    geom = _geom_to_geojson(field.geometry) if field else None
+    if not geom:
+        return None
+
+    try:
+        west, south, east, north = shape(geom).bounds
+        return [west, south, east, north]
+    except Exception:
+        return None
+
+
 def _bounds_for_tile(tile_path: str | None) -> list[float] | None:
     if not tile_path:
         return None
@@ -101,9 +113,11 @@ def _bounds_for_tile(tile_path: str | None) -> list[float] | None:
         return None
 
 
-def _analysis_to_response(analysis: SatelliteAnalysis) -> dict:
+def _analysis_to_response(analysis: SatelliteAnalysis, field: Field | None = None) -> dict:
     tile_path = analysis.tiles_path or str(_tile_path_for_field(analysis.field_id))
     has_tile = bool(tile_path and Path(tile_path).exists())
+    has_fallback_tile = analysis.ndvi_mean is not None
+    bounds = _bounds_for_tile(tile_path) if has_tile else _bounds_for_field(field)
 
     return {
         "id": analysis.id,
@@ -115,11 +129,46 @@ def _analysis_to_response(analysis: SatelliteAnalysis) -> dict:
         "ndvi_min": analysis.ndvi_min,
         "ndvi_max": analysis.ndvi_max,
         "tiles_path": tile_path if has_tile else analysis.tiles_path,
-        "tile_url": f"/api/v1/fields/{analysis.field_id}/ndvi-tile" if has_tile else None,
-        "bounds": _bounds_for_tile(tile_path) if has_tile else None,
+        "tile_url": f"/api/v1/fields/{analysis.field_id}/ndvi-tile" if has_tile or has_fallback_tile else None,
+        "bounds": bounds,
         "status": analysis.status,
         "processed_at": analysis.processed_at,
     }
+
+
+def _ndvi_color(ndvi: float | None) -> tuple[int, int, int]:
+    if ndvi is None:
+        return (142, 148, 158)
+    if ndvi < 0.15:
+        return (120, 72, 32)
+    if ndvi < 0.30:
+        return (220, 80, 45)
+    if ndvi < 0.45:
+        return (238, 180, 45)
+    if ndvi < 0.60:
+        return (142, 202, 67)
+    return (32, 132, 65)
+
+
+def _fallback_ndvi_png(ndvi: float | None) -> bytes:
+    try:
+        from PIL import Image, ImageDraw
+    except Exception:
+        raise HTTPException(status_code=404, detail="Tile nao disponivel")
+
+    size = 512
+    color = _ndvi_color(ndvi)
+    img = Image.new("RGBA", (size, size), (*color, 185))
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    # Pequena textura para o overlay nao parecer uma placa chapada no mapa.
+    for y in range(0, size, 32):
+        alpha = 24 if (y // 32) % 2 == 0 else 10
+        draw.rectangle((0, y, size, y + 16), fill=(255, 255, 255, alpha))
+
+    output = io.BytesIO()
+    img.save(output, format="PNG")
+    return output.getvalue()
 
 
 def _field_to_response(field: Field) -> dict:
@@ -460,7 +509,7 @@ async def list_analyses(
     Retorna análises Sentinel-2 do talhão, ordenadas da mais recente.
     Suporta paginação via `limit` e `offset`.
     """
-    await _get_field_owned_or_404(field_id, user_id, db)
+    field = await _get_field_owned_or_404(field_id, user_id, db)
 
     result = await db.execute(
         select(SatelliteAnalysis)
@@ -473,7 +522,7 @@ async def list_analyses(
         .offset(offset)
     )
     analyses = result.scalars().all()
-    return [_analysis_to_response(a) for a in analyses]
+    return [_analysis_to_response(a, field) for a in analyses]
 
 
 @router.get(
@@ -538,7 +587,7 @@ async def get_latest_analysis(
     Retorna a análise Sentinel-2 mais recente (status=valid) do talhão.
     Retorna 404 se ainda não há análises processadas.
     """
-    await _get_field_owned_or_404(field_id, user_id, db)
+    field = await _get_field_owned_or_404(field_id, user_id, db)
 
     result = await db.execute(
         select(SatelliteAnalysis)
@@ -555,7 +604,7 @@ async def get_latest_analysis(
             status_code=404,
             detail="Nenhuma análise disponível para este talhão ainda",
         )
-    return _analysis_to_response(analysis)
+    return _analysis_to_response(analysis, field)
 
 
 @router.get(
@@ -566,7 +615,7 @@ async def get_ndvi_tile(
     field_id: UUID,
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id),
-) -> FileResponse:
+) -> Response:
     await _get_field_owned_or_404(field_id, user_id, db)
 
     result = await db.execute(
@@ -588,7 +637,13 @@ async def get_ndvi_tile(
     ]
     tile_path = next((p for p in candidates if p and p.exists()), None)
     if not tile_path:
-        raise HTTPException(status_code=404, detail="Tile nao disponivel")
+        if analysis.ndvi_mean is None:
+            raise HTTPException(status_code=404, detail="Tile nao disponivel")
+        return Response(
+            content=_fallback_ndvi_png(analysis.ndvi_mean),
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=300"},
+        )
 
     return FileResponse(tile_path, media_type="image/png")
 
