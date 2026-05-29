@@ -9,6 +9,10 @@ services:
     dockerContext: .
     healthCheckPath: /health
     autoDeployTrigger: commit
+    disk:
+      name: techa-data
+      mountPath: /data
+      sizeGB: 10
     envVars:
       - key: PORT
         value: "10000"
@@ -24,6 +28,10 @@ services:
         value: "10000"
       - key: ENABLE_PIPELINE
         value: "false"
+      - key: TILES_STORAGE_PATH
+        value: /data/tiles
+      - key: RASTER_STORAGE_PATH
+        value: /data/rasters
       - key: SECRET_KEY
         generateValue: true
       - key: JWT_SECRET_KEY

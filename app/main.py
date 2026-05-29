@@ -4,6 +4,7 @@
 # ─────────────────────────────────────────────────────────────────
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
@@ -20,6 +21,16 @@ from app.core.limiter import limiter
 from app.api.v1 import auth, farms, fields, anomalies, inspections, dashboard, admin
 
 
+def _ensure_storage_dirs() -> None:
+    """Garante que os diretórios persistentes existem antes do pipeline/API usar."""
+    for storage_path in (settings.TILES_STORAGE_PATH, settings.RASTER_STORAGE_PATH):
+        path = Path(storage_path)
+        path.mkdir(parents=True, exist_ok=True)
+        if not path.exists() or not path.is_dir():
+            raise RuntimeError(f"Diretório de storage indisponível: {storage_path}")
+        logger.info(f"Storage pronto: {storage_path}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -30,6 +41,7 @@ async def lifespan(app: FastAPI):
     # ── Startup ──────────────────────────────────────────────────
     setup_logging()
     logger.info("🚀 Techá API iniciando...")
+    _ensure_storage_dirs()
 
     # Verifica conexão com banco
     db_ok = await check_db_connection()
