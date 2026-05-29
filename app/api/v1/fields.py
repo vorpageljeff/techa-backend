@@ -975,6 +975,7 @@ async def generate_report(
     analyses_data = [
         {
             "image_date": a.image_date,
+            "processed_at": a.processed_at,
             "ndvi_mean":  a.ndvi_mean,
             "ndvi_min":   a.ndvi_min,
             "ndvi_max":   a.ndvi_max,

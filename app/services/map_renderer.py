@@ -8,6 +8,8 @@ import math
 import os
 from typing import Optional
 
+from app.core.config import settings
+
 try:
     from PIL import Image, ImageDraw, ImageFont
     _PIL_OK = True
@@ -25,7 +27,7 @@ _TILE_SERVER   = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 _USER_AGENT    = "TechaApp/1.0 (agro monitoring)"
 _MAP_SIZE      = (520, 360)   # pixels do mapa composto
 _ZOOM_DEFAULT  = 14
-_DATA_DIR      = "/data/tiles"
+_DATA_DIR      = settings.TILES_STORAGE_PATH
 
 # ── Paleta NDVI ───────────────────────────────────────────────────────────────
 _NDVI_LEGEND = [
@@ -331,7 +333,7 @@ def _draw_center_dot(img: Image.Image) -> Image.Image:
 def generate_ndvi_map(field_id: str) -> Optional[str]:
     """
     Gera mapa composto (OSM + NDVI + polígono + legenda) para o talhão.
-    Salva em /data/tiles/{field_id}/map_report.png e retorna o caminho.
+    Salva no storage de tiles configurado e retorna o caminho.
     Retorna None se não conseguir gerar.
     """
     if not _PIL_OK or not _REQUESTS_OK:

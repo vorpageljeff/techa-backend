@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from datetime import datetime
 from typing import Any
 
 from fpdf import FPDF
+
+from app.core.config import settings
 
 
 # ── Paleta de cores Techá ─────────────────────────────────────────
@@ -57,6 +60,44 @@ def _fmt_date(dt: Any) -> str:
     return dt.strftime("%d/%m/%Y")
 
 
+def _fmt_datetime(dt: Any) -> str:
+    if dt is None:
+        return "-"
+    if isinstance(dt, str):
+        try:
+            dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+        except Exception:
+            return dt
+    return dt.strftime("%d/%m/%Y %H:%M")
+
+
+def _storage_file(field_id: Any, filename: str) -> str:
+    return os.path.join(settings.TILES_STORAGE_PATH, str(field_id), filename)
+
+
+def _fallback_ndvi_image(ndvi: float | None) -> str | None:
+    try:
+        from PIL import Image, ImageDraw
+    except Exception:
+        return None
+
+    if ndvi is None:
+        color = _GRAY
+    else:
+        color, _ = _ndvi_color_label(ndvi)
+
+    img = Image.new("RGBA", (520, 360), (*color, 185))
+    draw = ImageDraw.Draw(img, "RGBA")
+    for y in range(0, 360, 30):
+        alpha = 24 if (y // 30) % 2 == 0 else 10
+        draw.rectangle((0, y, 520, y + 14), fill=(255, 255, 255, alpha))
+
+    tmp = tempfile.NamedTemporaryFile(prefix="techa_ndvi_", suffix=".png", delete=False)
+    tmp.close()
+    img.save(tmp.name)
+    return tmp.name
+
+
 class _PDF(FPDF):
     """PDF customizado com header e footer Techá."""
 
@@ -102,7 +143,7 @@ def generate_field_report(
     crop: str | None,
     area_ha: float | None,
     planting_date: Any,
-    analyses: list[dict],   # lista: {image_date, ndvi_mean, ndvi_min, ndvi_max, status}
+    analyses: list[dict],   # lista: {image_date, processed_at, ndvi_mean, ndvi_min, ndvi_max, status}
     anomalies: list[dict],  # lista: {detected_at, ndvi_drop_pct, affected_area_ha, suspected_type, status}
     latest: dict | None,    # análise mais recente
     field_id=None,
@@ -137,7 +178,7 @@ def generate_field_report(
     # Fallback: tile NDVI bruto
     img_to_embed = map_img
     if img_to_embed is None and field_id is not None:
-        _raw = f"/data/tiles/{field_id}/ndvi_latest.png"
+        _raw = _storage_file(field_id, "ndvi_latest.png")
         if os.path.exists(_raw):
             img_to_embed = _raw
 
@@ -146,7 +187,7 @@ def generate_field_report(
     bounds_info = ""
     if field_id is not None:
         try:
-            _meta_path = f"/data/tiles/{field_id}/ndvi_latest.json"
+            _meta_path = _storage_file(field_id, "ndvi_latest.json")
             if os.path.exists(_meta_path):
                 _meta = json.loads(open(_meta_path).read())
                 _b = _meta.get("bounds", {})
@@ -161,6 +202,7 @@ def generate_field_report(
             pass
 
     img_date_str = _fmt_date(latest.get("image_date")) if latest else "-"
+    processed_at_str = _fmt_datetime(latest.get("processed_at")) if latest else "-"
     ndvi_v  = latest.get("ndvi_mean")  if latest else None
     ndvi_lo = latest.get("ndvi_min")   if latest else None
     ndvi_hi = latest.get("ndvi_max")   if latest else None
@@ -179,6 +221,7 @@ def generate_field_report(
         ("Resolucao:",    "10 metros/pixel"),
         ("Revisita:",     "~5 dias"),
         ("Data imagem:",  img_date_str),
+        ("Processado:",   processed_at_str),
         ("Lat / Lon:",    f"{center_lat:.5f}N, {center_lon:.5f}E" if center_lat else "-"),
         ("Extensao:",     bounds_info if bounds_info else "-"),
         ("Area talhao:",  f"{area_ha:.1f} ha" if area_ha else "-"),
@@ -202,6 +245,9 @@ def generate_field_report(
     y_after_table = pdf.get_y()
 
     # Mapa à direita (alinhado ao topo da seção)
+    if img_to_embed is None and latest:
+        img_to_embed = _fallback_ndvi_image(ndvi_v)
+
     if img_to_embed:
         map_h_approx = map_w * 0.70   # proporção 4:3 aprox
         pdf.image(img_to_embed, x=x_map, y=y_section_start, w=map_w)
@@ -240,6 +286,8 @@ def generate_field_report(
         pdf.set_fill_color(*_GREEN_LIGHT)
         pdf.cell(55, 7, "Data da imagem:", border="B", fill=True)
         pdf.cell(0,  7, img_date_str,      border="B", fill=False, ln=True)
+        pdf.cell(55, 7, "Processado em:",  border="B", fill=True)
+        pdf.cell(0,  7, processed_at_str,  border="B", fill=False, ln=True)
         pdf.cell(55, 7, "NDVI Minimo:",    border="B", fill=True)
         pdf.cell(0,  7, f"{ndvi_lo:.3f}" if ndvi_lo is not None else "-", border="B", ln=True)
         pdf.cell(55, 7, "NDVI Maximo:",   border="B", fill=True)
@@ -259,7 +307,7 @@ def generate_field_report(
     ndvi_dist: dict | None = None
     if field_id is not None:
         try:
-            _dist_path = f"/data/tiles/{field_id}/ndvi_distribution.json"
+            _dist_path = _storage_file(field_id, "ndvi_distribution.json")
             if os.path.exists(_dist_path):
                 ndvi_dist = json.loads(open(_dist_path).read())
         except Exception:
@@ -371,9 +419,10 @@ def generate_field_report(
         pdf.set_fill_color(*_GREEN_DARK)
         pdf.set_text_color(*_WHITE)
         pdf.set_font("Helvetica", "B", 9)
-        pdf.cell(40, 7, "  Data",       fill=True)
-        pdf.cell(30, 7, "NDVI Medio",  fill=True, align="C")
-        pdf.cell(30, 7, "Min / Max",   fill=True, align="C")
+        pdf.cell(32, 7, "  Imagem",     fill=True)
+        pdf.cell(38, 7, "Processado",  fill=True, align="C")
+        pdf.cell(26, 7, "NDVI Medio",  fill=True, align="C")
+        pdf.cell(28, 7, "Min / Max",   fill=True, align="C")
         pdf.cell(0,  7, "Status",      fill=True, align="C", ln=True)
         pdf.set_text_color(*_DARK)
 
@@ -386,9 +435,10 @@ def generate_field_report(
             ahi = a.get("ndvi_max")
             st  = "Valida" if a.get("status") == "valid" else "Nuvem"
             pdf.set_font("Helvetica", "", 8)
-            pdf.cell(40, 6, f"  {_fmt_date(a.get('image_date'))}", fill=fill)
-            pdf.cell(30, 6, f"{am:.3f}"  if am  is not None else "-", fill=fill, align="C")
-            pdf.cell(30, 6, f"{alo:.2f} / {ahi:.2f}" if alo is not None else "-", fill=fill, align="C")
+            pdf.cell(32, 6, f"  {_fmt_date(a.get('image_date'))}", fill=fill)
+            pdf.cell(38, 6, _fmt_datetime(a.get("processed_at")), fill=fill, align="C")
+            pdf.cell(26, 6, f"{am:.3f}"  if am  is not None else "-", fill=fill, align="C")
+            pdf.cell(28, 6, f"{alo:.2f} / {ahi:.2f}" if alo is not None else "-", fill=fill, align="C")
             pdf.cell(0,  6, st, fill=fill, align="C", ln=True)
     else:
         pdf.set_font("Helvetica", "I", 9)
