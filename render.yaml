@@ -23,7 +23,7 @@ services:
       - key: APP_PORT
         value: "10000"
       - key: ENABLE_PIPELINE
-        value: "true"
+        value: "false"
       - key: TILES_STORAGE_PATH
         value: /tmp/techa/tiles
       - key: RASTER_STORAGE_PATH
