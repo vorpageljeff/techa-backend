@@ -2,7 +2,7 @@ services:
   - type: web
     name: techa-backend
     runtime: docker
-    plan: free
+    plan: starter
     region: virginia
     branch: main
     dockerfilePath: ./docker/Dockerfile
@@ -27,7 +27,7 @@ services:
       - key: APP_PORT
         value: "10000"
       - key: ENABLE_PIPELINE
-        value: "false"
+        value: "true"
       - key: TILES_STORAGE_PATH
         value: /data/tiles
       - key: RASTER_STORAGE_PATH
@@ -45,6 +45,14 @@ services:
           type: keyvalue
           name: techa-redis
           property: connectionString
+      - key: COPERNICUS_USER
+        sync: false
+      - key: COPERNICUS_PASSWORD
+        sync: false
+      - key: COPERNICUS_CLIENT_ID
+        sync: false
+      - key: COPERNICUS_CLIENT_SECRET
+        sync: false
       - key: RESEND_API_KEY
         sync: false
       - key: EMAIL_FROM_ADDRESS
