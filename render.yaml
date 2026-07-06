@@ -2,7 +2,7 @@ services:
   - type: web
     name: techa-backend
     runtime: docker
-    plan: free
+    plan: starter
     region: virginia
     branch: main
     dockerfilePath: ./docker/Dockerfile
@@ -36,11 +36,6 @@ services:
         fromDatabase:
           name: techa-db
           property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: keyvalue
-          name: techa-redis
-          property: connectionString
       - key: COPERNICUS_USER
         sync: false
       - key: COPERNICUS_PASSWORD
@@ -56,17 +51,9 @@ services:
       - key: EMAIL_FROM_NAME
         value: "Techá - InnovAgro"
 
-  - type: keyvalue
-    name: techa-redis
-    plan: free
-    region: virginia
-    ipAllowList:
-      - source: 0.0.0.0/0
-        description: everywhere
-
 databases:
   - name: techa-db
-    plan: free
+    plan: basic-256mb
     region: virginia
     postgresMajorVersion: "15"
     databaseName: techa_db
