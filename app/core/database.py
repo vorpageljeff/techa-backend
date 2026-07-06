@@ -3,6 +3,8 @@
 # Conexão assíncrona com PostgreSQL via SQLAlchemy 2.0 + asyncpg
 # ─────────────────────────────────────────────────────────────────
 
+import asyncio
+
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     AsyncEngine,
@@ -66,11 +68,14 @@ async def get_db() -> AsyncSession:
 
 
 # ── Healthcheck do banco ──────────────────────────────────────────
-async def check_db_connection() -> bool:
+async def check_db_connection(timeout_seconds: float = 5.0) -> bool:
     """Verifica se o banco está acessível. Usado no /health endpoint."""
     try:
-        async with AsyncSessionLocal() as session:
-            await session.execute(text("SELECT 1"))
+        async def _check() -> None:
+            async with AsyncSessionLocal() as session:
+                await session.execute(text("SELECT 1"))
+
+        await asyncio.wait_for(_check(), timeout=timeout_seconds)
         return True
     except Exception as e:
         logger.error(f"Falha na conexão com o banco: {e}")

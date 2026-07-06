@@ -46,9 +46,9 @@ async def lifespan(app: FastAPI):
     # Verifica conexão com banco
     db_ok = await check_db_connection()
     if not db_ok:
-        logger.error("❌ Não foi possível conectar ao banco de dados!")
-        raise RuntimeError("Banco de dados inacessível")
-    logger.info("✅ Banco de dados conectado")
+        logger.warning("Banco indisponivel no startup; API sobe em modo degraded")
+    else:
+        logger.info("Banco de dados conectado")
 
     scheduler = None
     if settings.ENABLE_PIPELINE:
@@ -107,12 +107,23 @@ app.include_router(admin.router,      prefix=PREFIX, tags=["Admin"])
 # ── Health Check ──────────────────────────────────────────────────
 @app.get("/health", tags=["Sistema"])
 async def health_check():
-    """Verifica se a API está no ar. Usado por load balancers e monitoramento."""
+    """Liveness: responde rapido para acordar/monitorar o processo."""
+    return {
+        "status": "ok",
+        "version": "1.0.0",
+        "service": "Tech" + chr(0xe1),
+        "environment": settings.APP_ENV,
+    }
+
+
+@app.get("/ready", tags=["Sistema"])
+async def readiness_check():
+    """Readiness: verifica dependencias externas, como o banco."""
     db_ok = await check_db_connection()
     return {
         "status": "ok" if db_ok else "degraded",
         "version": "1.0.0",
-        "service": "Tech" + chr(0xe1),  # chr(0xe1)=á, encoding-safe em qualquer locale
+        "service": "Tech" + chr(0xe1),
         "environment": settings.APP_ENV,
         "database": "connected" if db_ok else "error",
     }
