@@ -25,9 +25,9 @@ services:
       - key: ENABLE_PIPELINE
         value: "true"
       - key: TILES_STORAGE_PATH
-        value: /tmp/techa/tiles
+        value: /data/tiles
       - key: RASTER_STORAGE_PATH
-        value: /tmp/techa/rasters
+        value: /data/rasters
       - key: SECRET_KEY
         generateValue: true
       - key: JWT_SECRET_KEY
@@ -50,6 +50,10 @@ services:
         sync: false
       - key: EMAIL_FROM_NAME
         value: "Techá - InnovAgro"
+    disk:
+      name: techa-backend-data
+      mountPath: /data
+      sizeGB: 10
 
 databases:
   - name: techa-db

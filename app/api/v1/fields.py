@@ -116,7 +116,6 @@ def _bounds_for_tile(tile_path: str | None) -> list[float] | None:
 def _analysis_to_response(analysis: SatelliteAnalysis, field: Field | None = None) -> dict:
     tile_path = analysis.tiles_path or str(_tile_path_for_field(analysis.field_id))
     has_tile = bool(tile_path and Path(tile_path).exists())
-    has_fallback_tile = analysis.ndvi_mean is not None
     bounds = _bounds_for_tile(tile_path) if has_tile else _bounds_for_field(field)
 
     return {
@@ -129,7 +128,7 @@ def _analysis_to_response(analysis: SatelliteAnalysis, field: Field | None = Non
         "ndvi_min": analysis.ndvi_min,
         "ndvi_max": analysis.ndvi_max,
         "tiles_path": tile_path if has_tile else analysis.tiles_path,
-        "tile_url": f"/api/v1/fields/{analysis.field_id}/ndvi-tile" if has_tile or has_fallback_tile else None,
+        "tile_url": f"/api/v1/fields/{analysis.field_id}/ndvi-tile" if has_tile else None,
         "bounds": bounds,
         "status": analysis.status,
         "processed_at": analysis.processed_at,
@@ -637,13 +636,7 @@ async def get_ndvi_tile(
     ]
     tile_path = next((p for p in candidates if p and p.exists()), None)
     if not tile_path:
-        if analysis.ndvi_mean is None:
-            raise HTTPException(status_code=404, detail="Tile nao disponivel")
-        return Response(
-            content=_fallback_ndvi_png(analysis.ndvi_mean),
-            media_type="image/png",
-            headers={"Cache-Control": "public, max-age=300"},
-        )
+        raise HTTPException(status_code=404, detail="Tile NDVI real ainda nao disponivel")
 
     return FileResponse(tile_path, media_type="image/png")
 
