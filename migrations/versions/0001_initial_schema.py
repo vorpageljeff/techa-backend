@@ -20,7 +20,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # ── Extensão uuid-ossp (disponível no Railway Postgres) ───────
+    # ── Extensões necessárias no Postgres gerenciado ──────────────
+    op.execute('CREATE EXTENSION IF NOT EXISTS postgis;')
     op.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";')
 
     # ── users ─────────────────────────────────────────────────────
@@ -135,3 +136,4 @@ def downgrade() -> None:
     op.drop_table("farms")
     op.drop_table("users")
     op.execute('DROP EXTENSION IF EXISTS "uuid-ossp";')
+    op.execute('DROP EXTENSION IF EXISTS postgis;')

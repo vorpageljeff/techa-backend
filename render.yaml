@@ -36,11 +36,6 @@ services:
         fromDatabase:
           name: techa-db
           property: connectionString
-      - key: REDIS_URL
-        fromService:
-          name: techa-redis
-          type: keyvalue
-          property: connectionString
       - key: COPERNICUS_USER
         sync: false
       - key: COPERNICUS_PASSWORD
@@ -55,12 +50,6 @@ services:
         sync: false
       - key: EMAIL_FROM_NAME
         value: "Techá - InnovAgro"
-
-  - type: keyvalue
-    name: techa-redis
-    plan: starter
-    ipAllowList: []
-    maxmemoryPolicy: allkeys-lru
 
 databases:
   - name: techa-db

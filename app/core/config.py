@@ -38,7 +38,6 @@ class Settings(BaseSettings):
     DATABASE_URL_SYNC: str = ""  # sync (psycopg2) — usado pelo Alembic (derivado se vazio)
 
     # ── Redis ─────────────────────────────────────────────────────
-    REDIS_URL: str = "redis://localhost:6379/0"
 
     # ── JWT ───────────────────────────────────────────────────────
     JWT_SECRET_KEY: str
