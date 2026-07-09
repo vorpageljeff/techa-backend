@@ -13,8 +13,6 @@ build/
 
 # Dados de satélite (arquivos grandes)
 /data/
-/design-reference/
-/product-reference/
 
 # Logs
 logs/

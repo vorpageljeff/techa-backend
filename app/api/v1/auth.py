@@ -1,31 +1,37 @@
-﻿# ─────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 # app/api/v1/auth.py
 # Endpoints de autenticação — registro, login e recuperação de senha
 # ─────────────────────────────────────────────────────────────────
 
 import random
 import string
-from datetime import datetime, timedelta, timezone
+import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status, BackgroundTasks
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import delete, select, func
+from sqlalchemy import select, func
 
 from uuid import UUID
 from loguru import logger
 from app.core.limiter import limiter as _limiter
 
+import redis as _redis_sync
+
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import hash_password, verify_password, create_access_token, get_current_user_id
 from app.core.email import send_reset_code
-from app.models.password_reset import PasswordResetCode
 from app.models.user import User
 from app.schemas.auth import UserRegister, UserLogin, TokenResponse, UserResponse
 
 router = APIRouter()
 
+# ── Redis client (síncrono, usado só para operações simples de token) ──────────
+def _get_redis():
+    return _redis_sync.from_url(settings.REDIS_URL, decode_responses=True)
+
+_RESET_PREFIX  = "pwd_reset:"
 _RESET_TTL_SEC = settings.RESET_CODE_TTL_MINUTES * 60
 
 
@@ -249,22 +255,19 @@ async def forgot_password(
     user = result.scalar_one_or_none()
 
     if user and user.is_active:
-        email_lower = data.email.strip().lower()
         code = _make_otp()
-        now = datetime.now(timezone.utc)
-        reset_code = await db.get(PasswordResetCode, email_lower)
-        if reset_code:
-            reset_code.code = code
-            reset_code.expires_at = now + timedelta(seconds=_RESET_TTL_SEC)
-            reset_code.created_at = now
-        else:
-            db.add(PasswordResetCode(
-                email=email_lower,
-                code=code,
-                expires_at=now + timedelta(seconds=_RESET_TTL_SEC),
-                created_at=now,
-            ))
-        await db.flush()
+        key  = f"{_RESET_PREFIX}{data.email.lower()}"
+
+        # Salva no Redis com TTL
+        try:
+            r = _get_redis()
+            r.setex(key, _RESET_TTL_SEC, code)
+        except Exception as redis_err:
+            logger.error(f"Redis falhou ao salvar OTP: {redis_err}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Serviço temporariamente indisponível. Tente novamente.",
+            )
 
         # Envia e-mail de forma assíncrona com log de erro
         import asyncio as _asyncio
@@ -277,20 +280,8 @@ async def forgot_password(
                 logger.info(f"Email OTP enviado para {user.email.lower()}")
             else:
                 logger.error(f"Email OTP NAO enviado para {user.email.lower()} — verifique configuracao Resend")
-                await db.execute(delete(PasswordResetCode).where(PasswordResetCode.email == email_lower))
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Não foi possível enviar o e-mail de recuperação. Verifique a configuração de e-mail.",
-                )
-        except HTTPException:
-            raise
         except Exception as email_err:
             logger.error(f"Excecao ao enviar email OTP para {user.email}: {email_err}")
-            await db.execute(delete(PasswordResetCode).where(PasswordResetCode.email == email_lower))
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Não foi possível enviar o e-mail de recuperação. Tente novamente em instantes.",
-            )
 
     return {
         "message": (
@@ -305,22 +296,19 @@ async def forgot_password(
     status_code=status.HTTP_200_OK,
     summary="Verificar se o código OTP é válido (antes de trocar a senha)",
 )
-async def verify_reset_code(
-    data: _VerifyRequest,
-    db: AsyncSession = Depends(get_db),
-) -> dict:
+async def verify_reset_code(data: _VerifyRequest) -> dict:
     """
     Verifica o código OTP sem consumi-lo.
     Use para dar feedback imediato ao usuário no app (ex: campo verde/vermelho).
     """
-    email_lower = data.email.strip().lower()
-    reset_code = await db.get(PasswordResetCode, email_lower)
-    now = datetime.now(timezone.utc)
-    expires_at = reset_code.expires_at if reset_code else None
-    if expires_at and expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    key = f"{_RESET_PREFIX}{data.email.lower()}"
+    try:
+        r    = _get_redis()
+        saved = r.get(key)
+    except Exception:
+        raise HTTPException(status_code=503, detail="Serviço temporariamente indisponível.")
 
-    if not reset_code or reset_code.code != data.code.strip() or not expires_at or expires_at <= now:
+    if not saved or saved != data.code.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Código inválido ou expirado.",
@@ -347,21 +335,21 @@ async def reset_password(
             detail="A nova senha deve ter pelo menos 8 caracteres.",
         )
 
-    email_lower = data.email.strip().lower()
-    reset_code = await db.get(PasswordResetCode, email_lower)
-    now = datetime.now(timezone.utc)
-    expires_at = reset_code.expires_at if reset_code else None
-    if expires_at and expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    key = f"{_RESET_PREFIX}{data.email.lower()}"
+    try:
+        r     = _get_redis()
+        saved = r.get(key)
+    except Exception:
+        raise HTTPException(status_code=503, detail="Serviço temporariamente indisponível.")
 
-    if not reset_code or reset_code.code != data.code.strip() or not expires_at or expires_at <= now:
+    if not saved or saved != data.code.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Código inválido ou expirado. Solicite um novo código.",
         )
 
     # Busca o usuário (case-insensitive)
-    result = await db.execute(select(User).where(func.lower(User.email) == email_lower))
+    result = await db.execute(select(User).where(func.lower(User.email) == data.email.strip().lower()))
     user   = result.scalar_one_or_none()
 
     if not user or not user.is_active:
@@ -372,7 +360,7 @@ async def reset_password(
 
     # Atualiza senha e invalida o código
     user.password = hash_password(data.new_password)
-    await db.delete(reset_code)
+    r.delete(key)
     await db.flush()
 
     return {"message": "Senha redefinida com sucesso. Faça login com a nova senha."}

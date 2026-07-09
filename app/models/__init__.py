@@ -7,7 +7,6 @@ from app.models.field import Field
 from app.models.satellite_analysis import SatelliteAnalysis
 from app.models.anomaly import Anomaly
 from app.models.field_inspection import FieldInspection
-from app.models.password_reset import PasswordResetCode
 
 __all__ = [
     "User",
@@ -16,5 +15,4 @@ __all__ = [
     "SatelliteAnalysis",
     "Anomaly",
     "FieldInspection",
-    "PasswordResetCode",
 ]

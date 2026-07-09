@@ -10,7 +10,6 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.farms import router as farms_router
 from app.api.v1.fields import router as fields_router
 from app.api.v1.anomalies import router as anomalies_router
-from app.api.v1.inspections import router as inspections_router
 
 router = APIRouter()
 
@@ -18,4 +17,3 @@ router.include_router(auth_router,      prefix="/auth",      tags=["Autenticaç�
 router.include_router(farms_router,     prefix="/farms",     tags=["Fazendas"])
 router.include_router(fields_router,    prefix="/fields",    tags=["Talhões"])
 router.include_router(anomalies_router, prefix="/anomalies", tags=["Anomalias"])
-router.include_router(inspections_router, prefix="/inspections", tags=["Inspeções"])

@@ -4,8 +4,6 @@
 # Usa AsyncIOScheduler para funcionar no loop asyncio do FastAPI
 # ─────────────────────────────────────────────────────────────────
 
-from datetime import datetime, timezone
-from pathlib import Path
 from uuid import UUID
 from typing import Optional
 
@@ -27,7 +25,6 @@ def start_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
         max_instances=1,        # evita execuções sobrepostas
         misfire_grace_time=300, # tolera atraso de até 5 min antes de pular
-        next_run_time=datetime.now(timezone.utc),
     )
     scheduler.start()
     logger.info("✅ Scheduler Sentinel-2 iniciado — ciclo a cada 30 minutos")
@@ -117,7 +114,6 @@ async def _process_field(
     from app.pipeline.preprocessor import apply_scl_mask
     from app.pipeline.ndvi import compute_ndvi_stats, get_baseline_ndvi
     from app.pipeline.anomaly_detector import save_analysis, detect_and_save
-    from app.pipeline.tiles import generate_ndvi_png
 
     field_id = field.id
     field_area_ha = field.area_ha or 0.0
@@ -131,9 +127,9 @@ async def _process_field(
             return False
 
         # ── 2. Busca imagens disponíveis ──────────────────────────
-        items = search_images(bbox, days_back=60)
+        items = search_images(bbox, days_back=15)
         if not items:
-            logger.info(f"Talhão {field_id}: nenhuma imagem disponível nos ultimos 60 dias")
+            logger.info(f"Talhão {field_id}: nenhuma imagem disponível nos últimos 15 dias")
             return True  # não é erro, apenas sem imagem nova
 
         # Usa a imagem mais recente (itens já ordenados por data)
@@ -181,12 +177,6 @@ async def _process_field(
             field_area_ha=field_area_ha,
             baseline_ndvi_mean=baseline_ndvi,
         )
-        tiles_path = generate_ndvi_png(
-            b04=preproc.b04,
-            b08=preproc.b08,
-            field_id=field_id,
-            bounds=bbox,
-        )
 
         # ── 6. Salva análise + 7. Detecta anomalia + 8. FCM ──────
         async with AsyncSessionLocal() as db:
@@ -198,7 +188,6 @@ async def _process_field(
                 cloud_cover_pct=preproc.cloud_cover_pct,
                 raster_path=raster_path,
                 db=db,
-                tiles_path=tiles_path,
             )
 
             if baseline_ndvi is not None:
@@ -263,13 +252,9 @@ async def _is_already_processed(field_id: UUID, image_date) -> bool:
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(
-            select(SatelliteAnalysis).where(
+            select(SatelliteAnalysis.id).where(
                 SatelliteAnalysis.field_id == field_id,
                 SatelliteAnalysis.image_date == image_date,
-            ).order_by(SatelliteAnalysis.processed_at.desc()).limit(1)
+            ).limit(1)
         )
-        analysis = result.scalar_one_or_none()
-        if not analysis:
-            return False
-
-        return bool(analysis.tiles_path and Path(analysis.tiles_path).exists())
+        return result.scalar_one_or_none() is not None

@@ -22,8 +22,8 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 # Coleção correta: tudo minúsculo com hifens (CRÍTICO)
 SENTINEL_COLLECTION = "sentinel-2-l2a"
-MAX_CLOUD_COVER = 20
-DAYS_BACK = 60
+MAX_CLOUD_COVER = 30
+DAYS_BACK = 15
 
 # OData: busca de produtos (catálogo)
 ODATA_CATALOG = "https://catalogue.dataspace.copernicus.eu/odata/v1"
@@ -361,7 +361,7 @@ def _download_file(url: str, dest: Path, token: str) -> None:
 def download_bands(
     stac_item,
     field_id: str,
-    save_dir: str | None = None,
+    save_dir: str = "/data/rasters",
 ) -> Optional[dict[str, Path]]:
     """
     Baixa as bandas B04 (RED), B08 (NIR) e SCL de um item STAC
@@ -375,16 +375,13 @@ def download_bands(
     Args:
         stac_item: pystac.Item retornado por search_images()
         field_id:  UUID do talhão — organiza o diretório de destino
-        save_dir:  raiz do armazenamento local. Se omitido, usa RASTER_STORAGE_PATH.
+        save_dir:  raiz do armazenamento local (default: /data/rasters)
 
     Returns:
         dict com chaves 'B04', 'B08', 'SCL' e Path local de cada arquivo,
         ou None se o download falhar.
     """
     try:
-        if save_dir is None:
-            save_dir = os.getenv("RASTER_STORAGE_PATH", "/data/rasters")
-
         token = _get_token()
         product_name = stac_item.id
         date_str = stac_item.datetime.strftime("%Y-%m-%d")

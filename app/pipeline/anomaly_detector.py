@@ -95,7 +95,6 @@ async def save_analysis(
     cloud_cover_pct: float,
     raster_path: Optional[str],
     db,
-    tiles_path: Optional[str] = None,
 ) -> "SatelliteAnalysis":
     """
     Salva o registro de análise de satélite no banco.
@@ -115,7 +114,6 @@ async def save_analysis(
         ndvi_min=stats.ndvi_min,
         ndvi_max=stats.ndvi_max,
         raster_path=raster_path,
-        tiles_path=tiles_path,
         status="valid",
     )
     db.add(analysis)
