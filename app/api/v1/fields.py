@@ -932,6 +932,10 @@ async def delete_field(
 
 # ── Relatório PDF ─────────────────────────────────────────────────
 
+class ReportRequest(BaseModel):
+    language: str | None = "pt-BR"
+
+
 @router.post(
     "/fields/{field_id}/report",
     summary="Gerar relatório PDF do talhão",
@@ -940,6 +944,7 @@ async def delete_field(
 )
 async def generate_report(
     field_id: UUID,
+    body: ReportRequest | None = None,
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id),
 ) -> Response:
@@ -1010,9 +1015,11 @@ async def generate_report(
         anomalies=anomalies_data,
         latest=latest,
         field_id=str(field_id),
+        language=body.language if body else "pt-BR",
     )
 
-    filename = f"relatorio_{field.name.replace(' ', '_')}_{field_id}.pdf"
+    filename_prefix = "informe" if (body and body.language and body.language.lower().startswith("es")) else "relatorio"
+    filename = f"{filename_prefix}_{field.name.replace(' ', '_')}_{field_id}.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
