@@ -318,4 +318,8 @@ async def _is_already_processed(field_id: UUID, image_date) -> bool:
         if not analysis:
             return False
 
-        return bool(analysis.tiles_path and Path(analysis.tiles_path).exists())
+        has_tile = bool(analysis.tiles_path and Path(analysis.tiles_path).exists())
+        if has_tile:
+            analysis.processed_at = datetime.now(timezone.utc)
+            await db.commit()
+        return has_tile
