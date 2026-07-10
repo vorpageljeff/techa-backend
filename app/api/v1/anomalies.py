@@ -61,7 +61,7 @@ async def list_anomalies(
     Paginação: `limit`, `offset`.
     """
     query = (
-        select(Anomaly)
+        select(Anomaly, Field.name.label("field_name"), Farm.name.label("farm_name"))
         .join(Field, Anomaly.field_id == Field.id)
         .join(Farm, Field.farm_id == Farm.id)
         .where(Farm.user_id == user_id)
@@ -74,7 +74,13 @@ async def list_anomalies(
     result = await db.execute(
         query.order_by(Anomaly.detected_at.desc()).limit(limit).offset(offset)
     )
-    return result.scalars().all()
+    response = []
+    for anomaly, field_name, farm_name in result.all():
+        data = AnomalyResponse.model_validate(anomaly).model_dump()
+        data["field_name"] = field_name
+        data["farm_name"] = farm_name
+        response.append(AnomalyResponse(**data))
+    return response
 
 
 @router.get(

@@ -201,20 +201,19 @@ async def _process_field(
                 tiles_path=tiles_path,
             )
 
-            if baseline_ndvi is not None:
-                await detect_and_save(
-                    field_id=field_id,
-                    field_area_ha=field_area_ha,
-                    analysis=analysis,
-                    stats=stats,
-                    cloud_cover_pct=preproc.cloud_cover_pct,
-                    db=db,
-                    user_fcm_token=user_fcm_token,
-                    user_email=user_email,
-                    user_name=user_name,
-                    farm_name=farm_name,
-                    field_name=field_name,
-                )
+            await detect_and_save(
+                field_id=field_id,
+                field_area_ha=field_area_ha,
+                analysis=analysis,
+                stats=stats,
+                cloud_cover_pct=preproc.cloud_cover_pct,
+                db=db,
+                user_fcm_token=user_fcm_token,
+                user_email=user_email,
+                user_name=user_name,
+                farm_name=farm_name,
+                field_name=field_name,
+            )
 
             await db.commit()  # persiste analysis + anomalia (flush não é suficiente)
 

@@ -50,15 +50,25 @@ def should_alert(
     field_area_ha: float,
     cloud_cover_pct: float,
     ndvi_drop_threshold: float = 15.0,
+    low_ndvi_threshold: float = 0.4,
     cloud_cover_max: float = 20.0,
 ) -> tuple[bool, str]:
     """
-    Avalia os 3 critérios de alerta.
+    Avalia se a análise deve virar alerta acionável.
 
-    Returns:
-        (deve_alertar, motivo_textual)
+    O MVP dispara alerta por dois caminhos:
+    - NDVI médio baixo (< 0.4), mesmo sem baseline anterior.
+    - Queda relevante contra baseline, quando já existe histórico.
     """
-    reasons = []
+    if cloud_cover_pct >= cloud_cover_max:
+        return False, f"Cobertura de nuvem {cloud_cover_pct:.1f}% >= {cloud_cover_max}%"
+
+    if stats.ndvi_mean < low_ndvi_threshold:
+        return (
+            True,
+            f"NDVI médio baixo={stats.ndvi_mean:.3f} < {low_ndvi_threshold:.1f} | "
+            f"nuvem={cloud_cover_pct:.1f}%",
+        )
 
     # Critério 1: queda de NDVI > 15%
     if stats.ndvi_drop_pct <= ndvi_drop_threshold:
@@ -74,11 +84,6 @@ def should_alert(
             f"Área afetada {stats.affected_area_ha:.2f}ha < mínimo {min_area_ha:.2f}ha "
             f"({threshold_pct}% de {field_area_ha:.0f}ha)",
         )
-
-    # Critério 3: cobertura de nuvem < 20% (já garantida pelo preprocessor,
-    # mas verificamos novamente por segurança)
-    if cloud_cover_pct >= cloud_cover_max:
-        return False, f"Cobertura de nuvem {cloud_cover_pct:.1f}% >= {cloud_cover_max}%"
 
     reason = (
         f"NDVI drop={stats.ndvi_drop_pct:.1f}% | "
@@ -165,18 +170,44 @@ async def detect_and_save(
         logger.info(f"Sem anomalia detectada para field={field_id}: {reason}")
         return None
 
+    is_low_ndvi_alert = stats.ndvi_mean < 0.4
+    affected_area_ha = field_area_ha if is_low_ndvi_alert else stats.affected_area_ha
+    suspected_type = "low_ndvi" if is_low_ndvi_alert else "unknown"
+
     logger.warning(
         f"[ANOMALIA] DETECTADA | field={field_id} | {reason}"
     )
 
+    from sqlalchemy import select
     from app.models.anomaly import Anomaly
+
+    existing_result = await db.execute(
+        select(Anomaly)
+        .where(
+            Anomaly.field_id == field_id,
+            Anomaly.status == "active",
+            Anomaly.suspected_type == suspected_type,
+        )
+        .order_by(Anomaly.detected_at.desc())
+        .limit(1)
+    )
+    existing = existing_result.scalar_one_or_none()
+    if existing:
+        existing.analysis_id = analysis.id
+        existing.ndvi_drop_pct = stats.ndvi_drop_pct
+        existing.affected_area_ha = affected_area_ha
+        existing.detected_at = datetime.now(timezone.utc)
+        await db.flush()
+        await db.refresh(existing)
+        logger.info(f"Anomalia ativa atualizada: id={existing.id} | status=active")
+        return existing
 
     anomaly = Anomaly(
         analysis_id=analysis.id,
         field_id=field_id,
         ndvi_drop_pct=stats.ndvi_drop_pct,
-        affected_area_ha=stats.affected_area_ha,
-        suspected_type="unknown",    # classificação futura por IA
+        affected_area_ha=affected_area_ha,
+        suspected_type=suspected_type,
         status="active",
         push_sent=False,
         detected_at=datetime.now(timezone.utc),

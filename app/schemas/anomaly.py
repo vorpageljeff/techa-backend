@@ -18,6 +18,8 @@ class AnomalyResponse(BaseModel):
     status: str
     push_sent: bool
     alert_sent_at: Optional[datetime]
+    field_name: Optional[str] = None
+    farm_name: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

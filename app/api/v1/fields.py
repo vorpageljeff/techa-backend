@@ -516,11 +516,18 @@ async def list_analyses(
             SatelliteAnalysis.field_id == field_id,
             SatelliteAnalysis.status == "valid",
         )
-        .order_by(SatelliteAnalysis.image_date.desc())
+        .order_by(SatelliteAnalysis.image_date.desc(), SatelliteAnalysis.processed_at.desc())
         .limit(limit)
         .offset(offset)
     )
-    analyses = result.scalars().all()
+    rows = result.scalars().all()
+    analyses = []
+    seen_dates = set()
+    for analysis in rows:
+        if analysis.image_date in seen_dates:
+            continue
+        seen_dates.add(analysis.image_date)
+        analyses.append(analysis)
     return [_analysis_to_response(a, field) for a in analyses]
 
 
@@ -594,7 +601,7 @@ async def get_latest_analysis(
             SatelliteAnalysis.field_id == field_id,
             SatelliteAnalysis.status == "valid",
         )
-        .order_by(SatelliteAnalysis.image_date.desc())
+        .order_by(SatelliteAnalysis.image_date.desc(), SatelliteAnalysis.processed_at.desc())
         .limit(1)
     )
     analysis = result.scalar_one_or_none()
@@ -623,7 +630,7 @@ async def get_ndvi_tile(
             SatelliteAnalysis.field_id == field_id,
             SatelliteAnalysis.status == "valid",
         )
-        .order_by(SatelliteAnalysis.image_date.desc())
+        .order_by(SatelliteAnalysis.image_date.desc(), SatelliteAnalysis.processed_at.desc())
         .limit(1)
     )
     analysis = result.scalar_one_or_none()
@@ -796,10 +803,14 @@ async def get_ndvi_history(
             SatelliteAnalysis.field_id == field_id,
             SatelliteAnalysis.status == "valid",
         )
-        .order_by(SatelliteAnalysis.image_date.asc())
+        .order_by(SatelliteAnalysis.image_date.desc(), SatelliteAnalysis.processed_at.desc())
         .limit(limit)
     )
-    analyses = result.scalars().all()
+    rows = result.scalars().all()
+    latest_by_date = {}
+    for analysis in rows:
+        latest_by_date.setdefault(analysis.image_date, analysis)
+    analyses = sorted(latest_by_date.values(), key=lambda item: item.image_date)
 
     points = [
         {
