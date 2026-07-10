@@ -80,6 +80,8 @@ async def run_pipeline_cycle() -> None:
             else:
                 errors += 1
 
+        await _backfill_low_ndvi_alerts([row[0] for row in rows])
+
         logger.info(
             f"[PIPELINE] Ciclo concluído: {ok} sucesso(s), {errors} erro(s) "
             f"de {len(rows)} talhão(ões)"
@@ -252,6 +254,51 @@ def _get_field_shapely(field):
         return shapely_wkt.loads(field.geometry)
     except Exception:
         return None
+
+
+async def _backfill_low_ndvi_alerts(fields: list["Field"]) -> None:
+    """Cria alertas para análises antigas com NDVI baixo."""
+    from sqlalchemy import select
+    from app.core.database import AsyncSessionLocal
+    from app.models.satellite_analysis import SatelliteAnalysis
+    from app.pipeline.anomaly_detector import detect_and_save
+    from app.pipeline.ndvi import NDVIStats
+
+    async with AsyncSessionLocal() as db:
+        for field in fields:
+            result = await db.execute(
+                select(SatelliteAnalysis)
+                .where(
+                    SatelliteAnalysis.field_id == field.id,
+                    SatelliteAnalysis.status == "valid",
+                    SatelliteAnalysis.ndvi_mean.isnot(None),
+                )
+                .order_by(SatelliteAnalysis.image_date.desc(), SatelliteAnalysis.processed_at.desc())
+                .limit(1)
+            )
+            analysis = result.scalar_one_or_none()
+            if not analysis or analysis.ndvi_mean is None or analysis.ndvi_mean >= 0.4:
+                continue
+
+            stats = NDVIStats(
+                ndvi_mean=float(analysis.ndvi_mean),
+                ndvi_min=float(analysis.ndvi_min or analysis.ndvi_mean),
+                ndvi_max=float(analysis.ndvi_max or analysis.ndvi_mean),
+                ndvi_drop_pct=0.0,
+                affected_area_ha=0.0,
+                pixel_resolution_m=10.0,
+            )
+            await detect_and_save(
+                field_id=field.id,
+                field_area_ha=field.area_ha or 0.0,
+                analysis=analysis,
+                stats=stats,
+                cloud_cover_pct=analysis.cloud_cover_pct or 0.0,
+                db=db,
+                field_name=field.name or "",
+            )
+
+        await db.commit()
 
 
 async def _is_already_processed(field_id: UUID, image_date) -> bool:
