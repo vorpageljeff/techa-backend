@@ -12,6 +12,10 @@ from typing import Optional
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 
+NDVI_CLIP_BUFFER_PCT = 0.03
+NDVI_CLIP_BUFFER_MIN_DEG = 0.00008
+NDVI_CLIP_BUFFER_MAX_DEG = 0.00060
+
 
 def start_scheduler() -> AsyncIOScheduler:
     """
@@ -157,7 +161,7 @@ async def _process_field(
             return False
 
         # ── 4. SCL Mask + cobertura de nuvem ─────────────────────
-        clip_geom = _get_field_shapely(field)
+        clip_geom = _get_field_processing_geom(field)
         preproc = apply_scl_mask(band_paths, clip_geom=clip_geom)
         if preproc is None:
             # Imagem descartada por excesso de nuvem
@@ -236,8 +240,9 @@ def _get_field_bbox(field) -> Optional[list[float]]:
     if not field.geometry:
         return None
     try:
-        from shapely import wkt as shapely_wkt
-        geom = shapely_wkt.loads(field.geometry)
+        geom = _get_field_processing_geom(field)
+        if geom is None:
+            return None
         bounds = geom.bounds   # (minx, miny, maxx, maxy)
         return list(bounds)
     except Exception as exc:
@@ -254,6 +259,22 @@ def _get_field_shapely(field):
         return shapely_wkt.loads(field.geometry)
     except Exception:
         return None
+
+
+def _get_field_processing_geom(field):
+    """Geometria usada no raster NDVI, com pequena folga para nao cortar borda."""
+    geom = _get_field_shapely(field)
+    if geom is None:
+        return None
+
+    minx, miny, maxx, maxy = geom.bounds
+    span = max(maxx - minx, maxy - miny)
+    buffer_deg = min(
+        max(span * NDVI_CLIP_BUFFER_PCT, NDVI_CLIP_BUFFER_MIN_DEG),
+        NDVI_CLIP_BUFFER_MAX_DEG,
+    )
+    buffered = geom.buffer(buffer_deg)
+    return buffered if buffered.is_valid and not buffered.is_empty else geom
 
 
 async def _backfill_low_ndvi_alerts(fields: list["Field"]) -> None:

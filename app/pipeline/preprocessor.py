@@ -47,6 +47,22 @@ def _check_rasterio():
         )
 
 
+def _geometry_for_raster(clip_geom, raster_src):
+    if clip_geom is None:
+        return None
+
+    if raster_src.crs and raster_src.crs.to_epsg() != 4326:
+        from pyproj import Transformer
+        from shapely.ops import transform as shapely_transform
+
+        transformer = Transformer.from_crs(
+            "EPSG:4326", raster_src.crs.to_epsg(), always_xy=True
+        )
+        return shapely_transform(transformer.transform, clip_geom)
+
+    return clip_geom
+
+
 def _read_band(path: Path, clip_geom=None) -> np.ndarray:
     """
     Lê uma banda raster e opcionalmente recorta ao polígono do talhão.
@@ -64,19 +80,16 @@ def _read_band(path: Path, clip_geom=None) -> np.ndarray:
     with rasterio.open(str(path)) as src:
         if clip_geom is not None:
             # Reprojecta geometria para o CRS do raster se necessário
-            from pyproj import Transformer
-            from shapely.ops import transform as shapely_transform
-
-            if src.crs and src.crs.to_epsg() != 4326:
-                transformer = Transformer.from_crs(
-                    "EPSG:4326", src.crs.to_epsg(), always_xy=True
-                )
-                clip_geom = shapely_transform(transformer.transform, clip_geom)
+            clip_geom = _geometry_for_raster(clip_geom, src)
 
             # Usa nodata=0 para compatibilidade com uint16 (jp2 Sentinel-2)
             # Depois converte para float32 e substitui 0 por NaN
             out_image, _ = rio_mask(
-                src, [clip_geom.__geo_interface__], crop=True, nodata=0
+                src,
+                [clip_geom.__geo_interface__],
+                crop=True,
+                nodata=0,
+                all_touched=True,
             )
             arr = out_image[0].astype(np.float32)
             arr[arr == 0] = np.nan  # pixels fora da máscara → NaN
@@ -121,11 +134,13 @@ def apply_scl_mask(
         with rasterio.open(str(band_paths["SCL"])) as scl_src:
             if clip_geom is not None:
                 from rasterio.mask import mask as rio_mask
+                scl_clip_geom = _geometry_for_raster(clip_geom, scl_src)
                 scl_clipped, _ = rio_mask(
                     scl_src,
-                    [clip_geom.__geo_interface__],
+                    [scl_clip_geom.__geo_interface__],
                     crop=True,
                     nodata=0,
+                    all_touched=True,
                 )
                 scl_raw = scl_clipped[0]
             else:
