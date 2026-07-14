@@ -60,6 +60,18 @@ async def _get_anomaly_of_user(
 
 
 @router.post(
+    "",
+    response_model=InspectionResponse,
+    status_code=status.HTTP_201_CREATED,
+    include_in_schema=False,
+)
+@router.post(
+    "/",
+    response_model=InspectionResponse,
+    status_code=status.HTTP_201_CREATED,
+    include_in_schema=False,
+)
+@router.post(
     "/inspections",
     response_model=InspectionResponse,
     status_code=status.HTTP_201_CREATED,
@@ -101,6 +113,16 @@ async def create_inspection(
 
 
 @router.get(
+    "",
+    response_model=list[InspectionResponse],
+    include_in_schema=False,
+)
+@router.get(
+    "/",
+    response_model=list[InspectionResponse],
+    include_in_schema=False,
+)
+@router.get(
     "/inspections",
     response_model=list[InspectionResponse],
     summary="Listar inspeções de campo do usuário",
@@ -131,6 +153,11 @@ async def list_inspections(
     ]
 
 
+@router.get(
+    "/{inspection_id}",
+    response_model=InspectionResponse,
+    include_in_schema=False,
+)
 @router.get(
     "/inspections/{inspection_id}",
     response_model=InspectionResponse,
