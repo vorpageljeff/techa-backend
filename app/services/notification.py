@@ -7,6 +7,7 @@
 import os
 import json
 import base64
+import httpx
 from loguru import logger
 
 # Inicializado uma única vez no processo
@@ -70,8 +71,12 @@ async def send_push_notification(
         logger.debug("FCM token ausente — notificação ignorada.")
         return False
 
+    token = fcm_token.strip()
+    if token.startswith(("ExponentPushToken[", "ExpoPushToken[")):
+        return await _send_expo_push(token, title, body, data)
+
     if not _init_firebase():
-        logger.info(f"[FCM simulado] Para: {fcm_token[:20]}... | {title}: {body}")
+        logger.info(f"[FCM simulado] Para: {token[:20]}... | {title}: {body}")
         return False
 
     try:
@@ -80,7 +85,7 @@ async def send_push_notification(
         message = messaging.Message(
             notification=messaging.Notification(title=title, body=body),
             data={k: str(v) for k, v in (data or {}).items()},
-            token=fcm_token,
+            token=token,
             android=messaging.AndroidConfig(priority="high"),
             apns=messaging.APNSConfig(
                 payload=messaging.APNSPayload(
@@ -89,11 +94,48 @@ async def send_push_notification(
             ),
         )
         response = messaging.send(message)
-        logger.info(f"FCM enviado: message_id={response} | token={fcm_token[:20]}...")
+        logger.info(f"FCM enviado: message_id={response} | token={token[:20]}...")
         return True
 
     except Exception as exc:
-        logger.error(f"Erro ao enviar FCM para {fcm_token[:20]}...: {exc}")
+        logger.error(f"Erro ao enviar FCM para {token[:20]}...: {exc}")
+        return False
+
+
+async def _send_expo_push(
+    expo_token: str,
+    title: str,
+    body: str,
+    data: dict | None = None,
+) -> bool:
+    payload = {
+        "to": expo_token,
+        "title": title,
+        "body": body,
+        "sound": "default",
+        "priority": "high",
+        "data": {k: str(v) for k, v in (data or {}).items()},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(
+                "https://exp.host/--/api/v2/push/send",
+                json=payload,
+                headers={
+                    "Accept": "application/json",
+                    "Accept-Encoding": "gzip, deflate",
+                    "Content-Type": "application/json",
+                },
+            )
+        response.raise_for_status()
+        result = response.json()
+        if result.get("data", {}).get("status") == "ok":
+            logger.info(f"Expo push enviado | token={expo_token[:24]}...")
+            return True
+        logger.error(f"Expo push rejeitado | token={expo_token[:24]}... | resposta={result}")
+        return False
+    except Exception as exc:
+        logger.error(f"Erro ao enviar Expo push para {expo_token[:24]}...: {exc}")
         return False
 
 

@@ -44,6 +44,16 @@ async def _get_anomaly_of_user(
 
 
 @router.get(
+    "",
+    response_model=list[AnomalyResponse],
+    include_in_schema=False,
+)
+@router.get(
+    "/",
+    response_model=list[AnomalyResponse],
+    include_in_schema=False,
+)
+@router.get(
     "/anomalies",
     response_model=list[AnomalyResponse],
     summary="Listar anomalias do usuário",
@@ -84,6 +94,11 @@ async def list_anomalies(
 
 
 @router.get(
+    "/{anomaly_id}",
+    response_model=AnomalyResponse,
+    include_in_schema=False,
+)
+@router.get(
     "/anomalies/{anomaly_id}",
     response_model=AnomalyResponse,
     summary="Detalhe de uma anomalia",
@@ -97,6 +112,11 @@ async def get_anomaly(
     return await _get_anomaly_of_user(anomaly_id, user_id, db)
 
 
+@router.patch(
+    "/{anomaly_id}/confirm",
+    response_model=AnomalyResponse,
+    include_in_schema=False,
+)
 @router.patch(
     "/anomalies/{anomaly_id}/confirm",
     response_model=AnomalyResponse,
@@ -146,13 +166,18 @@ async def confirm_anomaly(
 
 
 @router.patch(
+    "/{anomaly_id}/dismiss",
+    response_model=AnomalyResponse,
+    include_in_schema=False,
+)
+@router.patch(
     "/anomalies/{anomaly_id}/dismiss",
     response_model=AnomalyResponse,
     summary="Descartar anomalia (falso positivo)",
 )
 async def dismiss_anomaly(
     anomaly_id: UUID,
-    data: AnomalyDismissRequest,
+    data: AnomalyDismissRequest | None = None,
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id),
 ) -> AnomalyResponse:
@@ -172,7 +197,7 @@ async def dismiss_anomaly(
     anomaly.status = "dismissed"
 
     # Registra motivo do descarte como inspeção de campo
-    if data.reason:
+    if data and data.reason:
         from app.models.field_inspection import FieldInspection
         inspection = FieldInspection(
             anomaly_id=anomaly.id,
@@ -187,6 +212,11 @@ async def dismiss_anomaly(
     return anomaly
 
 
+@router.get(
+    "/{anomaly_id}/inspections",
+    response_model=list[InspectionResponse],
+    include_in_schema=False,
+)
 @router.get(
     "/anomalies/{anomaly_id}/inspections",
     response_model=list[InspectionResponse],
