@@ -1,6 +1,8 @@
 # app/schemas/auth.py
 # Schemas Pydantic para autenticação — request e response
 
+from datetime import datetime
+
 from pydantic import BaseModel, EmailStr, field_validator
 from uuid import UUID
 
