@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     )
     CORS_ALLOWED_ORIGIN_REGEX: str = r"https://.*\.vercel\.app"
     SECRET_KEY: str
+    ADMIN_BOOTSTRAP_TOKEN: str = ""
 
     # ── Banco de Dados ────────────────────────────────────────────
     DATABASE_URL: str          # async (asyncpg) — usado pela API

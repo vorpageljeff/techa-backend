@@ -21,6 +21,7 @@ from app.core.database import get_db
 from app.core.security import hash_password, verify_password, create_access_token, get_current_user_id
 from app.core.email import send_reset_code
 from app.models.password_reset import PasswordResetCode
+from app.models.admin_audit_log import AdminAuditLog
 from app.models.user import User
 from app.schemas.auth import UserRegister, UserLogin, TokenResponse, UserResponse
 
@@ -100,6 +101,19 @@ async def login(
             detail="Conta desativada — entre em contato com o suporte",
         )
 
+    user.last_login_at = datetime.now(timezone.utc)
+    if user.plan == "admin":
+        db.add(AdminAuditLog(
+            actor_user_id=user.id,
+            actor_email=user.email,
+            action="admin.login",
+            target_type="session",
+            target_id=str(user.id),
+            details={},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        ))
+
     token = create_access_token(user.id)
     return {"access_token": token, "token_type": "bearer"}
 
@@ -167,6 +181,7 @@ class _ChangePasswordRequest(BaseModel):
 )
 async def change_password(
     data: _ChangePasswordRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id),
 ) -> None:
@@ -182,13 +197,28 @@ async def change_password(
             detail="Senha atual incorreta",
         )
 
-    if len(data.new_password) < 8:
+    minimum_length = 12 if user.plan == "admin" else 8
+    if len(data.new_password) < minimum_length:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Nova senha deve ter pelo menos 8 caracteres",
+            detail=(
+                f"Nova senha deve ter pelo menos {minimum_length} caracteres"
+            ),
         )
 
     user.password = hash_password(data.new_password)
+    user.must_change_password = False
+    if user.plan == "admin":
+        db.add(AdminAuditLog(
+            actor_user_id=user.id,
+            actor_email=user.email,
+            action="admin.password_changed",
+            target_type="user",
+            target_id=str(user.id),
+            details={},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        ))
     await db.flush()
 
 
@@ -341,12 +371,6 @@ async def reset_password(
     Redefine a senha do usuário usando o código OTP recebido por e-mail.
     O código é consumido (invalidado) após uso bem-sucedido.
     """
-    if len(data.new_password) < 8:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="A nova senha deve ter pelo menos 8 caracteres.",
-        )
-
     email_lower = data.email.strip().lower()
     reset_code = await db.get(PasswordResetCode, email_lower)
     now = datetime.now(timezone.utc)
@@ -370,8 +394,19 @@ async def reset_password(
             detail="Código inválido ou expirado.",
         )
 
+    minimum_length = 12 if user.plan == "admin" else 8
+    if len(data.new_password) < minimum_length:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "A nova senha deve ter pelo menos "
+                f"{minimum_length} caracteres."
+            ),
+        )
+
     # Atualiza senha e invalida o código
     user.password = hash_password(data.new_password)
+    user.must_change_password = False
     await db.delete(reset_code)
     await db.flush()
 

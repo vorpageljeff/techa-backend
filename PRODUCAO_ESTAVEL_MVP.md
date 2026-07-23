@@ -22,3 +22,14 @@ Decisoes importantes:
 - Para testar, acordar o Render acessando `/health` antes de usar o app.
 
 Daqui para frente, novas mudancas devem partir deste marco e preservar estes fluxos antes de evoluir novas features.
+
+## Evolucao de 2026-07-23
+
+- Adicionado suporte ao portal administrativo publicado separadamente no Vercel.
+- Criada a migracao `0003_admin_portal`, com ultimo login, troca obrigatoria de
+  senha e trilha de auditoria administrativa.
+- A conta inicial usa `admin@techa.com.py`, senha temporaria forte fora do Git e
+  exige troca no primeiro acesso.
+- O bootstrap antigo, que permitia autopromocao do primeiro usuario, foi
+  substituido por um fluxo protegido e inoperante depois da criacao do admin.
+- Android, iOS e web mobile continuam usando as mesmas rotas e o mesmo banco.

@@ -41,5 +41,8 @@ class UserResponse(BaseModel):
     name: str
     email: str
     plan: str
+    is_active: bool
+    must_change_password: bool = False
+    last_login_at: datetime | None = None
 
     model_config = {"from_attributes": True}
