@@ -81,7 +81,9 @@ class Settings(BaseSettings):
     NDVI_DROP_THRESHOLD: float = 15.0     # % mínimo de queda de NDVI
 
     # ── Pipeline e deploy ─────────────────────────────────────────
-    ENABLE_PIPELINE: bool = True          # permite desabilitar scheduler em hosts API-only
+    # A API web deve permanecer leve. O pipeline só pode ser habilitado
+    # explicitamente em um processo dedicado com recursos próprios.
+    ENABLE_PIPELINE: bool = False
 
     # ── Thresholds de Área por Tamanho de Talhão ──────────────────
     # (corresponde à regra de negócio validada com o agrônomo)
