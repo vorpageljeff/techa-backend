@@ -18,6 +18,7 @@ os.environ.update({
 })
 
 from app.core.security import (
+    generate_temporary_password,
     hash_password,
     verify_password,
     create_access_token,
@@ -26,6 +27,15 @@ from app.core.security import (
 
 
 class TestPasswordHashing:
+    def test_temporary_password_is_strong_and_random(self):
+        first = generate_temporary_password()
+        second = generate_temporary_password()
+
+        assert first.startswith("Tmp-")
+        assert len(first) >= 20
+        assert first != second
+        assert verify_password(first, hash_password(first)) is True
+
     def test_hash_password_returns_string(self):
         result = hash_password("minha_senha_123")
         assert isinstance(result, str)

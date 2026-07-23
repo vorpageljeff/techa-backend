@@ -4,6 +4,7 @@
 # ─────────────────────────────────────────────────────────────────
 
 from datetime import datetime, timedelta, timezone
+import secrets
 from typing import Optional
 from uuid import UUID
 
@@ -32,6 +33,11 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return _bcrypt.checkpw(plain_password.encode(), hashed_password.encode())
     except Exception:
         return False
+
+
+def generate_temporary_password() -> str:
+    """Gera uma senha temporária forte para redefinição administrativa."""
+    return f"Tmp-{secrets.token_urlsafe(12)}"
 
 
 # ── Funções JWT ───────────────────────────────────────────────────

@@ -14,7 +14,11 @@ from sqlalchemy import select, func
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import get_current_user_id, hash_password
+from app.core.security import (
+    generate_temporary_password,
+    get_current_user_id,
+    hash_password,
+)
 from app.models.admin_audit_log import AdminAuditLog
 from app.models.user import User
 from app.models.farm import Farm
@@ -144,6 +148,11 @@ class AdminAuditLogResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AdminPasswordResetResponse(BaseModel):
+    temporary_password: str
+    must_change_password: bool
 
 
 # ── Endpoints ─────────────────────────────────────────────────────
@@ -329,6 +338,50 @@ async def toggle_user_active(
         target,
         farms_count=farms_count,
         fields_count=fields_count,
+    )
+
+
+@router.post(
+    "/admin/users/{target_user_id}/reset-password",
+    response_model=AdminPasswordResetResponse,
+    summary="Gerar senha temporária para um usuário",
+)
+async def reset_user_password(
+    target_user_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+) -> AdminPasswordResetResponse:
+    actor = await _require_admin(user_id, db)
+
+    if target_user_id == actor.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Use Minha conta para alterar sua própria senha.",
+        )
+
+    result = await db.execute(select(User).where(User.id == target_user_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    temporary_password = generate_temporary_password()
+    target.password = hash_password(temporary_password)
+    target.must_change_password = True
+    _audit(
+        db,
+        actor,
+        request,
+        action="user.password_reset",
+        target_type="user",
+        target_id=str(target.id),
+        details={"email": target.email},
+    )
+    await db.flush()
+
+    return AdminPasswordResetResponse(
+        temporary_password=temporary_password,
+        must_change_password=True,
     )
 
 
