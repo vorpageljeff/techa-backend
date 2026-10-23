@@ -19,7 +19,7 @@ const metrics = [
   ['API', 'online'],
   ['Banco', 'conectado'],
   ['App', 'web/mobile'],
-  ['Deploy', 'Render + Vercel'],
+  ['Deploy', 'Hostinger + Vercel'],
 ];
 
 export function App() {
@@ -54,7 +54,7 @@ export function App() {
               <a className="primary" href={APP_URL} target="_blank" rel="noreferrer">
                 Acessar app
               </a>
-              <a className="secondary" href={`${API_BASE_URL}/health`} target="_blank" rel="noreferrer">
+                <a className="secondary" href={`${API_BASE_URL}/ready`} target="_blank" rel="noreferrer">
                 Ver status da API
               </a>
             </div>
@@ -105,7 +105,7 @@ export function App() {
             </li>
             <li>
               <strong>API</strong>
-              <span>Render segura autenticacao, banco, Redis e regras de negocio.</span>
+              <span>Hostinger segura autenticacao, banco, Redis e regras de negocio.</span>
             </li>
           </ol>
         </section>

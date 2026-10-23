@@ -15,6 +15,7 @@ from loguru import logger
 # Classes SCL que representam pixels inválidos (nuvem, sombra, neve, etc.)
 # Referência: Sen2Cor SCL classes
 SCL_INVALID_CLASSES = {
+    0,   # No data / outside SCL coverage
     1,   # Saturated / Defective
     2,   # Dark Area Pixels
     3,   # Cloud Shadows
@@ -32,6 +33,8 @@ class PreprocessResult(NamedTuple):
     b04: np.ndarray          # banda RED sem nuvens (float32, NaN onde inválido)
     b08: np.ndarray          # banda NIR sem nuvens (float32, NaN onde inválido)
     cloud_cover_pct: float   # percentual de pixels mascarados sobre o talhão
+    transform: object = None  # affine transform of the cropped B04 grid
+    crs: object = None        # coordinate reference system of that grid
 
 
 def _check_rasterio():
@@ -56,151 +59,92 @@ def _geometry_for_raster(clip_geom, raster_src):
         from shapely.ops import transform as shapely_transform
 
         transformer = Transformer.from_crs(
-            "EPSG:4326", raster_src.crs.to_epsg(), always_xy=True
+            "EPSG:4326", raster_src.crs, always_xy=True
         )
         return shapely_transform(transformer.transform, clip_geom)
 
     return clip_geom
 
 
-def _read_band(path: Path, clip_geom=None) -> np.ndarray:
-    """
-    Lê uma banda raster e opcionalmente recorta ao polígono do talhão.
-
-    Args:
-        path:      caminho para o arquivo .tif ou .jp2
-        clip_geom: geometria Shapely para recorte (opcional)
-
-    Returns:
-        Array float32 com valores da banda.
-    """
+def _read_band_grid(path: Path, clip_geom=None):
+    """Read data and retain the exact cropped pixel grid (including nodata)."""
     rasterio = _check_rasterio()
     from rasterio.mask import mask as rio_mask
 
     with rasterio.open(str(path)) as src:
+        if src.crs is None:
+            raise ValueError(f"Raster sem CRS: {path}")
         if clip_geom is not None:
-            # Reprojecta geometria para o CRS do raster se necessário
-            clip_geom = _geometry_for_raster(clip_geom, src)
-
-            # Usa nodata=0 para compatibilidade com uint16 (jp2 Sentinel-2)
-            # Depois converte para float32 e substitui 0 por NaN
-            out_image, _ = rio_mask(
-                src,
-                [clip_geom.__geo_interface__],
-                crop=True,
-                nodata=0,
-                all_touched=True,
+            geom = _geometry_for_raster(clip_geom, src)
+            data, transform = rio_mask(
+                src, [geom.__geo_interface__], crop=True,
+                filled=False, all_touched=True,
             )
-            arr = out_image[0].astype(np.float32)
-            arr[arr == 0] = np.nan  # pixels fora da máscara → NaN
-            return arr
+            band = data[0]
         else:
-            return src.read(1).astype(np.float32)
+            band = src.read(1, masked=True)
+            transform = src.transform
+        arr = band.astype(np.float32).filled(np.nan)
+        arr[arr == 0] = np.nan
+        return arr, transform, src.crs
 
 
-def apply_scl_mask(
-    band_paths: dict[str, Path],
-    clip_geom=None,
-) -> Optional[PreprocessResult]:
-    """
-    Aplica a SCL mask nas bandas B04 e B08.
+def _read_band(path: Path, clip_geom=None) -> np.ndarray:
+    return _read_band_grid(path, clip_geom)[0]
 
-    Pixels das classes SCL inválidas são substituídos por NaN.
-    Se a cobertura de nuvem for > MAX_CLOUD_PCT, retorna None
-    (imagem descartada).
 
-    Args:
-        band_paths: dict com chaves 'B04', 'B08', 'SCL' e paths locais
-        clip_geom:  Shapely geometry do talhão para recorte (opcional)
+def _aligned_band(path, shape, transform, crs, *, categorical=False):
+    """Align by geographic coordinates, never by array dimensions alone."""
+    rasterio = _check_rasterio()
+    from rasterio.warp import reproject, Resampling
 
-    Returns:
-        PreprocessResult com arrays limpos ou None se imagem inválida.
-    """
-    if "SCL" not in band_paths:
-        logger.warning("SCL não disponível — prosseguindo sem máscara de nuvem")
-        cloud_cover_pct = 0.0
-        b04 = _read_band(band_paths["B04"], clip_geom)
-        b08 = _read_band(band_paths["B08"], clip_geom)
-        return PreprocessResult(b04=b04, b08=b08, cloud_cover_pct=cloud_cover_pct)
-
-    try:
-        # Lê SCL (resolução 20m — pode ter dimensões diferentes das bandas 10m)
-        rasterio = _check_rasterio()
-        from rasterio.enums import Resampling
-
-        b04_raw = _read_band(band_paths["B04"], clip_geom)
-        b08_raw = _read_band(band_paths["B08"], clip_geom)
-
-        with rasterio.open(str(band_paths["SCL"])) as scl_src:
-            if clip_geom is not None:
-                from rasterio.mask import mask as rio_mask
-                scl_clip_geom = _geometry_for_raster(clip_geom, scl_src)
-                scl_clipped, _ = rio_mask(
-                    scl_src,
-                    [scl_clip_geom.__geo_interface__],
-                    crop=True,
-                    nodata=0,
-                    all_touched=True,
-                )
-                scl_raw = scl_clipped[0]
-            else:
-                scl_raw = scl_src.read(1)
-
-        # Reamostrar SCL para o tamanho das bandas 10m (se necessário)
-        if scl_raw.shape != b04_raw.shape:
-            from PIL import Image
-            scl_img = Image.fromarray(scl_raw.astype(np.uint8))
-            scl_img = scl_img.resize(
-                (b04_raw.shape[1], b04_raw.shape[0]),
-                resample=Image.NEAREST,
-            )
-            scl_arr = np.array(scl_img, dtype=np.uint8)
-        else:
-            scl_arr = scl_raw.astype(np.uint8)
-
-        # Calcula cobertura de nuvem (% de pixels inválidos)
-        total_pixels = scl_arr.size
-        invalid_mask = np.isin(scl_arr, list(SCL_INVALID_CLASSES))
-        cloud_pixels = int(np.sum(invalid_mask))
-        cloud_cover_pct = (cloud_pixels / total_pixels) * 100.0
-
-        logger.info(
-            f"SCL Mask: {cloud_pixels}/{total_pixels} pixels inválidos "
-            f"({cloud_cover_pct:.1f}% cobertura de nuvem)"
+    dtype = np.uint8 if categorical else np.float32
+    nodata = 0 if categorical else np.nan
+    destination = np.full(shape, nodata, dtype=dtype)
+    with rasterio.open(str(path)) as src:
+        if src.crs is None:
+            raise ValueError(f"Raster sem CRS: {path}")
+        reproject(
+            source=rasterio.band(src, 1), destination=destination,
+            src_transform=src.transform, src_crs=src.crs,
+            src_nodata=src.nodata if src.nodata is not None else 0,
+            dst_transform=transform, dst_crs=crs, dst_nodata=nodata,
+            resampling=Resampling.nearest,
         )
+    return destination
 
-        # Descarta imagem se cobertura excede o limiar
-        if cloud_cover_pct > MAX_CLOUD_PCT:
-            logger.warning(
-                f"Imagem descartada: {cloud_cover_pct:.1f}% > {MAX_CLOUD_PCT}% de nuvem"
-            )
+
+def apply_scl_mask(band_paths: dict[str, Path], clip_geom=None) -> Optional[PreprocessResult]:
+    """Align RED, NIR and SCL on B04's grid before masking invalid pixels."""
+    try:
+        b04, transform, crs = _read_band_grid(band_paths["B04"], clip_geom)
+        b08 = _aligned_band(band_paths["B08"], b04.shape, transform, crs)
+        footprint = np.isfinite(b04) & np.isfinite(b08)
+        b08[~footprint] = np.nan
+        b04[~footprint] = np.nan
+
+        if "SCL" not in band_paths:
+            logger.warning("SCL não disponível — prosseguindo sem máscara de nuvem")
+            return PreprocessResult(b04, b08, 0.0, transform, crs)
+
+        scl = _aligned_band(
+            band_paths["SCL"], b04.shape, transform, crs, categorical=True,
+        )
+        invalid = np.isin(scl, list(SCL_INVALID_CLASSES))
+        total = int(footprint.sum())
+        if total == 0:
             return None
-
-        # Aplica máscara: pixels inválidos → NaN
-        b04 = b04_raw.copy()
-        b08 = b08_raw.copy()
-        b04[invalid_mask] = np.nan
-        b08[invalid_mask] = np.nan
-
-        return PreprocessResult(b04=b04, b08=b08, cloud_cover_pct=round(cloud_cover_pct, 2))
-
-    except ImportError as exc:
-        raise exc
+        invalid_count = int((invalid & footprint).sum())
+        cloud_cover_pct = invalid_count / total * 100.0
+        logger.info(f"SCL Mask: {invalid_count}/{total} pixels inválidos ({cloud_cover_pct:.1f}%)")
+        if cloud_cover_pct > MAX_CLOUD_PCT:
+            logger.warning(f"Imagem descartada: {cloud_cover_pct:.1f}% de pixels inválidos")
+            return None
+        b04[invalid] = np.nan
+        b08[invalid] = np.nan
+        return PreprocessResult(b04, b08, round(cloud_cover_pct, 2), transform, crs)
+    except ImportError:
+        raise
     except Exception as exc:
-        # "do not overlap" → SCL não cobre o talhão (tile parcial ou borda)
-        # Fallback: processa sem máscara de nuvem em vez de descartar a imagem
-        err_msg = str(exc).lower()
-        if "overlap" in err_msg or "no overlap" in err_msg:
-            logger.warning(
-                f"SCL não sobrepõe a área do talhão (tile parcial?) — "
-                f"prosseguindo sem máscara de nuvem: {exc}"
-            )
-            try:
-                b04 = _read_band(band_paths["B04"], clip_geom)
-                b08 = _read_band(band_paths["B08"], clip_geom)
-                return PreprocessResult(b04=b04, b08=b08, cloud_cover_pct=0.0)
-            except Exception as exc2:
-                logger.error(f"Fallback também falhou: {exc2}")
-                return None
         logger.error(f"Erro na SCL mask: {exc}")
         return None

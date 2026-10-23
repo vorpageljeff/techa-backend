@@ -12,10 +12,6 @@ from typing import Optional
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 
-NDVI_CLIP_BUFFER_PCT = 0.03
-NDVI_CLIP_BUFFER_MIN_DEG = 0.00008
-NDVI_CLIP_BUFFER_MAX_DEG = 0.00060
-
 
 def start_scheduler() -> AsyncIOScheduler:
     """
@@ -192,6 +188,9 @@ async def _process_field(
             b08=preproc.b08,
             field_id=field_id,
             bounds=bbox,
+            transform=preproc.transform,
+            crs=preproc.crs,
+            clip_geom=clip_geom,
         )
 
         # ── 6. Salva análise + 7. Detecta anomalia + 8. FCM ──────
@@ -262,19 +261,8 @@ def _get_field_shapely(field):
 
 
 def _get_field_processing_geom(field):
-    """Geometria usada no raster NDVI, com pequena folga para nao cortar borda."""
-    geom = _get_field_shapely(field)
-    if geom is None:
-        return None
-
-    minx, miny, maxx, maxy = geom.bounds
-    span = max(maxx - minx, maxy - miny)
-    buffer_deg = min(
-        max(span * NDVI_CLIP_BUFFER_PCT, NDVI_CLIP_BUFFER_MIN_DEG),
-        NDVI_CLIP_BUFFER_MAX_DEG,
-    )
-    buffered = geom.buffer(buffer_deg)
-    return buffered if buffered.is_valid and not buffered.is_empty else geom
+    """Use the field itself; buffering includes neighboring land in the NDVI."""
+    return _get_field_shapely(field)
 
 
 async def _backfill_low_ndvi_alerts(fields: list["Field"]) -> None:

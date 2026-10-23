@@ -20,6 +20,6 @@ Configure o projeto da Vercel com:
 Variaveis opcionais:
 
 ```env
-VITE_API_BASE_URL=https://techa-backend.onrender.com
-VITE_APP_URL=https://mobile-dusky-alpha.vercel.app
+VITE_API_BASE_URL=https://techa-api.2.25.189.129.nip.io
+VITE_APP_URL=https://techa-mobile-web.vercel.app
 ```

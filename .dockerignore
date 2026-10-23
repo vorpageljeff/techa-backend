@@ -6,8 +6,12 @@ __pycache__/
 .venv/
 venv/
 .env
+.env.*
+!.env.example
+backups/
 .git
 .DS_Store
+**/._*
 build/
 dist/
 __MACOSX/

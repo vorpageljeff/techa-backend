@@ -17,6 +17,8 @@ RUN python -m pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 RUN adduser --disabled-password --gecos '' appuser \
+    && mkdir -p /data/tiles /data/rasters \
+    && chown -R appuser:appuser /data \
     && chown -R appuser:appuser /app
 USER appuser
 

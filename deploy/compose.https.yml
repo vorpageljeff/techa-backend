@@ -1,0 +1,16 @@
+# Apply only after API_DOMAIN DNS points to the VPS and staging checks pass.
+services:
+  api:
+    networks: [private, proxy]
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      - traefik.http.routers.techa-api.rule=Host(`${API_DOMAIN:?Set API_DOMAIN}`)
+      - traefik.http.routers.techa-api.entrypoints=websecure
+      - traefik.http.routers.techa-api.tls=true
+      - traefik.http.routers.techa-api.tls.certresolver=letsencrypt
+      - traefik.http.services.techa-api.loadbalancer.server.port=8000
+
+networks:
+  proxy:
+    external: true
